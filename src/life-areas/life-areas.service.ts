@@ -49,14 +49,10 @@ export class LifeAreasService {
     return this.prisma.lifeArea.update({ where: { id }, data: { name } });
   }
 
-  /** Reassigns the area's tasks to the board's next-lowest-order area (or clears them) before deleting it. */
+  /** Clears the area from its tasks (they keep no life area) before deleting it. */
   async remove(id: string, boardId: string) {
     await this.findOneOrThrow(id, boardId);
-    const fallback = await this.prisma.lifeArea.findFirst({
-      where: { boardId, id: { not: id } },
-      orderBy: { order: 'asc' },
-    });
-    await this.prisma.task.updateMany({ where: { areaId: id }, data: { areaId: fallback?.id ?? null } });
+    await this.prisma.task.updateMany({ where: { areaId: id }, data: { areaId: null } });
     await this.prisma.lifeArea.delete({ where: { id } });
   }
 }
