@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+/** Seeded for every new board; order also picks the display colour (order % 10). */
+const DEFAULT_LIFE_AREAS = ['Home', 'Personal', 'Work', 'Health', 'Social'];
+
 @Injectable()
 export class BoardsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -35,6 +38,9 @@ export class BoardsService {
     });
 
     const board = await this.prisma.board.create({ data: { ownerId: userId, name: 'My board' } });
+    await this.prisma.lifeArea.createMany({
+      data: DEFAULT_LIFE_AREAS.map((name, order) => ({ boardId: board.id, name, order })),
+    });
     return board.id;
   }
 
