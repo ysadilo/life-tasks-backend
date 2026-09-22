@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, TaskStatus } from '@prisma/client';
+import { Prisma, Task, TaskStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { UpdateTaskDto } from './task.dto';
+import { ResolveMissedAction, UpdateTaskDto } from './task.dto';
+import { occursOn, previousOccurrenceBefore } from './recurrence.util';
 
 export interface FindTasksFilter {
   boardId: string;
@@ -11,6 +12,10 @@ export interface FindTasksFilter {
   /** When true, return recurring series regardless of status; when a status is
    *  given without this flag, recurring series are excluded from that list. */
   recurring?: boolean;
+  /** Caller's local calendar day ("today"). Drives the lazy today→needs_triage
+   *  rollover and recurring missed-occurrence detection below — both run as a
+   *  side effect of listing, on whichever page the caller happens to load first. */
+  today?: Date;
 }
 
 function startOfUTCDay(date: Date): Date {
@@ -23,7 +28,14 @@ function startOfUTCDay(date: Date): Date {
 export class TasksService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findMany(filter: FindTasksFilter) {
+  async findMany(filter: FindTasksFilter) {
+    if (filter.today) {
+      await Promise.all([
+        this.rolloverStaleToday(filter.boardId, filter.today),
+        this.detectMissedOccurrences(filter.boardId, filter.today),
+      ]);
+    }
+
     const where: Prisma.TaskWhereInput = { boardId: filter.boardId };
 
     if (filter.recurring) {
@@ -57,6 +69,42 @@ export class TasksService {
     if (filter.status) where.status = filter.status;
 
     return this.prisma.task.findMany({ where, orderBy: { dueDate: 'asc' } });
+  }
+
+  /** Undone, non-recurring Today tasks whose day has passed fall back to Triage. */
+  private async rolloverStaleToday(boardId: string, today: Date) {
+    await this.prisma.task.updateMany({
+      where: { boardId, status: TaskStatus.today, recurrence: null, todayDate: { lt: startOfUTCDay(today) } },
+      data: { status: TaskStatus.needs_triage },
+    });
+  }
+
+  /**
+   * Flags a recurring task's most recent undone occurrence as missed once its
+   * day has passed and the series has no occurrence today (a daily task never
+   * gets flagged — it's already back on Today). Auto-clears once a new
+   * occurrence day arrives, since the series is "already in today's view" again.
+   */
+  private async detectMissedOccurrences(boardId: string, today: Date) {
+    const day = startOfUTCDay(today);
+    const recurring = await this.prisma.task.findMany({ where: { boardId, recurrence: { not: null } } });
+
+    await Promise.all(
+      recurring.map((task) => {
+        if (occursOn(task, day)) {
+          if (task.missedDates.length === 0) return null;
+          return this.prisma.task.update({ where: { id: task.id }, data: { missedDates: [] } });
+        }
+        if (task.missedDates.length > 0) return null;
+
+        const missed = previousOccurrenceBefore(task, day);
+        if (!missed) return null;
+        const isDone = task.completedDates.some((d) => startOfUTCDay(d).getTime() === missed.getTime());
+        if (isDone) return null;
+
+        return this.prisma.task.update({ where: { id: task.id }, data: { missedDates: [missed] } });
+      })
+    );
   }
 
   async findOne(id: string, boardId?: string) {
@@ -101,6 +149,10 @@ export class TasksService {
       return this.toggleOccurrence(current.id, dto.occurrenceDate, dto.occurrenceDone ?? true);
     }
 
+    if (dto.resolveMissedAction !== undefined) {
+      return this.resolveMissed(current, dto.resolveMissedAction);
+    }
+
     const { occurrenceDone: _od, occurrenceDate: _oda, ...rest } = dto;
     let data: Prisma.TaskUncheckedUpdateInput = { ...rest };
 
@@ -123,6 +175,29 @@ export class TasksService {
       data.completedAt = data.status === TaskStatus.done ? new Date() : null;
     }
     return this.prisma.task.update({ where: { id }, data });
+  }
+
+  /**
+   * Resolves a recurring task's flagged missed occurrence (always the single
+   * entry in missedDates — see the field comment on the schema). Doesn't touch
+   * the series' recurrence/recurrenceEndDate.
+   */
+  private resolveMissed(task: Task, action: ResolveMissedAction) {
+    const missed = task.missedDates[0];
+    if (!missed) return task;
+
+    const data: Prisma.TaskUncheckedUpdateInput = { missedDates: [] };
+    switch (action) {
+      case ResolveMissedAction.done:
+        data.completedDates = [...task.completedDates, missed];
+        break;
+      case ResolveMissedAction.addToday:
+        data.extraTodayDates = [...task.extraTodayDates, startOfUTCDay(new Date())];
+        break;
+      case ResolveMissedAction.dismiss:
+        break;
+    }
+    return this.prisma.task.update({ where: { id: task.id }, data });
   }
 
   private async toggleOccurrence(id: string, isoDate: string, done: boolean) {

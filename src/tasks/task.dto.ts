@@ -1,5 +1,11 @@
 import { Energy, Priority, Recurrence, TaskStatus } from '@prisma/client';
 
+export enum ResolveMissedAction {
+  done = 'done',
+  dismiss = 'dismiss',
+  addToday = 'addToday',
+}
+
 export class CreateTaskDto {
   title!: string;
   description?: string;
@@ -29,4 +35,8 @@ export class UpdateTaskDto {
   // the fields above — this is not a normal edit).
   occurrenceDate?: string;
   occurrenceDone?: boolean;
+
+  // Resolve a recurring task's flagged missed occurrence (also mutually exclusive
+  // with the fields above).
+  resolveMissedAction?: ResolveMissedAction;
 }

@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Task" ADD COLUMN     "missedDates" TIMESTAMP(3)[] DEFAULT ARRAY[]::TIMESTAMP(3)[],
+ADD COLUMN     "extraTodayDates" TIMESTAMP(3)[] DEFAULT ARRAY[]::TIMESTAMP(3)[];
