@@ -236,6 +236,25 @@ describe('TasksService recurring missed-occurrence detection', () => {
     await service.findMany({ boardId: 'b1', today });
     expect(prisma.task.update).not.toHaveBeenCalled();
   });
+
+  it('does not re-flag a missed occurrence that was already dismissed or added to today', async () => {
+    // Regression: resolving used to clear missedDates without recording that
+    // the occurrence was handled, so the very next detection pass immediately
+    // re-flagged the same date — dismiss/add-to-today never actually stuck.
+    (prisma.task.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 'r6',
+        recurrence: Recurrence.weekly,
+        dueDate: new Date('2026-09-10'),
+        recurrenceEndDate: null,
+        completedDates: [],
+        missedDates: [],
+        lastResolvedMissedOccurrence: new Date('2026-09-17'), // already dismissed/added-to-today
+      },
+    ]);
+    await service.findMany({ boardId: 'b1', today });
+    expect(prisma.task.update).not.toHaveBeenCalled();
+  });
 });
 
 describe('TasksService resolving a missed occurrence', () => {
@@ -253,21 +272,24 @@ describe('TasksService resolving a missed occurrence', () => {
     const data = await service.update('r1', { resolveMissedAction: 'done' } as never);
     expect(data.completedDates).toEqual([new Date('2026-09-15T00:00:00.000Z')]);
     expect(data.missedDates).toEqual([]);
+    expect(data.lastResolvedMissedOccurrence).toEqual(new Date('2026-09-15T00:00:00.000Z'));
   });
 
-  it('dismisses the missed occurrence without completing it', async () => {
+  it('dismisses the missed occurrence without completing it, but still records it as resolved', async () => {
     (prisma.task.findUnique as jest.Mock).mockResolvedValue(recurringTask);
     const data = await service.update('r1', { resolveMissedAction: 'dismiss' } as never);
     expect(data.completedDates).toBeUndefined();
     expect(data.missedDates).toEqual([]);
+    expect(data.lastResolvedMissedOccurrence).toEqual(new Date('2026-09-15T00:00:00.000Z'));
   });
 
-  it('adds the missed task to today without touching the recurrence schedule', async () => {
+  it('adds the missed task to today without touching the recurrence schedule, and records it as resolved', async () => {
     (prisma.task.findUnique as jest.Mock).mockResolvedValue(recurringTask);
     const data = await service.update('r1', { resolveMissedAction: 'addToday' } as never);
     expect(data.extraTodayDates).toHaveLength(1);
     expect(data.missedDates).toEqual([]);
     expect(data.recurrence).toBeUndefined();
+    expect(data.lastResolvedMissedOccurrence).toEqual(new Date('2026-09-15T00:00:00.000Z'));
   });
 
   it('is a no-op when there is nothing flagged as missed', async () => {

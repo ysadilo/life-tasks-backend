@@ -101,6 +101,10 @@ export class TasksService {
         if (!missed) return null;
         const isDone = task.completedDates.some((d) => startOfUTCDay(d).getTime() === missed.getTime());
         if (isDone) return null;
+        const alreadyResolved =
+          task.lastResolvedMissedOccurrence &&
+          missed.getTime() <= startOfUTCDay(task.lastResolvedMissedOccurrence).getTime();
+        if (alreadyResolved) return null;
 
         return this.prisma.task.update({ where: { id: task.id }, data: { missedDates: [missed] } });
       })
@@ -186,7 +190,7 @@ export class TasksService {
     const missed = task.missedDates[0];
     if (!missed) return task;
 
-    const data: Prisma.TaskUncheckedUpdateInput = { missedDates: [] };
+    const data: Prisma.TaskUncheckedUpdateInput = { missedDates: [], lastResolvedMissedOccurrence: missed };
     switch (action) {
       case ResolveMissedAction.done:
         data.completedDates = [...task.completedDates, missed];

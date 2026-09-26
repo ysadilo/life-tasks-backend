@@ -126,6 +126,10 @@ model Task {
   // Occurrence day(s) forced onto Today outside the normal cadence, e.g. via the
   // Triage "add to today" resolution for a missed occurrence.
   extraTodayDates   DateTime[] @default([])
+  // The most recent missed occurrence already resolved (any action — done,
+  // dismissed, or added to today). Stops detection from re-flagging the same
+  // day right after it's cleared from missedDates.
+  lastResolvedMissedOccurrence DateTime?
 
   assigneeId  String?
   assignee    User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
