@@ -21,7 +21,8 @@ export class TasksController {
     @Query('status') status?: TaskStatus,
     @Query('from') from?: string,
     @Query('to') to?: string,
-    @Query('recurring') recurring?: string
+    @Query('recurring') recurring?: string,
+    @Query('today') today?: string
   ) {
     const boardId = await this.boards.resolveSoloBoardId(userId, token);
     return this.tasks.findMany({
@@ -30,6 +31,7 @@ export class TasksController {
       from: from ? new Date(from) : undefined,
       to: to ? new Date(to) : undefined,
       recurring: recurring === 'true',
+      today: today ? new Date(today) : undefined,
     });
   }
 
