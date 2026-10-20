@@ -29,6 +29,12 @@ describe('TasksService.update completedAt', () => {
     expect(data.completedAt).toBeNull();
   });
 
+  it('stamps todayDate when a task enters Today', async () => {
+    (prisma.task.findUnique as jest.Mock).mockResolvedValue({ id: '1', status: TaskStatus.needs_triage });
+    const data = await service.update('1', { status: TaskStatus.today });
+    expect(data.todayDate).toBeInstanceOf(Date);
+  });
+
   it('leaves completedAt untouched when status does not change', async () => {
     (prisma.task.findUnique as jest.Mock).mockResolvedValue({ id: '1', status: TaskStatus.done });
     const data = await service.update('1', { title: 'renamed' });
@@ -138,9 +144,24 @@ describe('TasksService today→triage rollover', () => {
         boardId: 'b1',
         status: TaskStatus.today,
         recurrence: null,
-        todayDate: { lt: new Date('2026-09-22T00:00:00.000Z') },
+        OR: [{ todayDate: null }, { todayDate: { lt: new Date('2026-09-22T00:00:00.000Z') } }],
       },
       data: { status: TaskStatus.needs_triage },
+    });
+  });
+
+  it('promotes due backlog tasks to Today when `today` is passed', async () => {
+    (prisma.task.findMany as jest.Mock).mockResolvedValue([]);
+    await service.findMany({ boardId: 'b1', today: new Date('2026-09-22') });
+
+    expect(prisma.task.updateMany).toHaveBeenCalledWith({
+      where: {
+        boardId: 'b1',
+        status: TaskStatus.backlog,
+        recurrence: null,
+        dueDate: { lte: new Date('2026-09-22T00:00:00.000Z') },
+      },
+      data: { status: TaskStatus.today, todayDate: new Date('2026-09-22T00:00:00.000Z') },
     });
   });
 
