@@ -32,6 +32,7 @@ export class TasksService {
     if (filter.today) {
       await Promise.all([
         this.rolloverStaleToday(filter.boardId, filter.today),
+        this.promoteDueTasks(filter.boardId, filter.today),
         this.detectMissedOccurrences(filter.boardId, filter.today),
       ]);
     }
@@ -74,8 +75,23 @@ export class TasksService {
   /** Undone, non-recurring Today tasks whose day has passed fall back to Triage. */
   private async rolloverStaleToday(boardId: string, today: Date) {
     await this.prisma.task.updateMany({
-      where: { boardId, status: TaskStatus.today, recurrence: null, todayDate: { lt: startOfUTCDay(today) } },
+      where: {
+        boardId,
+        status: TaskStatus.today,
+        recurrence: null,
+        // A null todayDate (moved to Today before it was recorded) is stale too.
+        OR: [{ todayDate: null }, { todayDate: { lt: startOfUTCDay(today) } }],
+      },
       data: { status: TaskStatus.needs_triage },
+    });
+  }
+
+  /** A one-off backlog task surfaces on Today once its due date arrives (recurring series stay virtual). */
+  private async promoteDueTasks(boardId: string, today: Date) {
+    const day = startOfUTCDay(today);
+    await this.prisma.task.updateMany({
+      where: { boardId, status: TaskStatus.backlog, recurrence: null, dueDate: { lte: day } },
+      data: { status: TaskStatus.today, todayDate: day },
     });
   }
 
@@ -177,6 +193,8 @@ export class TasksService {
 
     if (typeof data.status === 'string' && data.status !== current.status) {
       data.completedAt = data.status === TaskStatus.done ? new Date() : null;
+      // Entering Today stamps the day it was taken in work (drives rollover and the calendar).
+      if (data.status === TaskStatus.today && !('todayDate' in dto)) data.todayDate = startOfUTCDay(new Date());
     }
     return this.prisma.task.update({ where: { id }, data });
   }
