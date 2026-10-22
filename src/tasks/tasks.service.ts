@@ -135,7 +135,7 @@ export class TasksService {
     return task;
   }
 
-  create(boardId: string, data: Prisma.TaskUncheckedCreateWithoutBoardInput) {
+  create(boardId: string, data: Prisma.TaskUncheckedCreateWithoutBoardInput, today = new Date()) {
     if (data.recurrence && !data.dueDate) {
       throw new BadRequestException('A recurring task needs a start date (dueDate).');
     }
@@ -143,7 +143,7 @@ export class TasksService {
       // A recurring series is not a board item; keep it off Today / Done.
       data = { ...data, status: TaskStatus.backlog, todayDate: null };
     } else {
-      const promo = this.dueTodayPromotion(data.dueDate, (data.status as TaskStatus) ?? TaskStatus.backlog);
+      const promo = this.dueTodayPromotion(data.dueDate, (data.status as TaskStatus) ?? TaskStatus.backlog, today);
       if (promo) data = { ...data, ...promo };
     }
     return this.prisma.task.create({
@@ -154,15 +154,16 @@ export class TasksService {
   /** A one-off task due today (or earlier) belongs on Today, not the backlog. */
   private dueTodayPromotion(
     dueDate: Prisma.TaskUncheckedCreateWithoutBoardInput['dueDate'],
-    status: TaskStatus
+    status: TaskStatus,
+    now: Date
   ): { status: TaskStatus; todayDate: Date } | null {
     if (!dueDate || status !== TaskStatus.backlog) return null;
-    const today = startOfUTCDay(new Date());
+    const today = startOfUTCDay(now);
     if (startOfUTCDay(new Date(dueDate as string)) > today) return null;
     return { status: TaskStatus.today, todayDate: today };
   }
 
-  async update(id: string, dto: UpdateTaskDto, boardId?: string) {
+  async update(id: string, dto: UpdateTaskDto, boardId?: string, today = new Date()) {
     const current = await this.findOne(id, boardId);
 
     if (dto.occurrenceDate !== undefined) {
@@ -186,7 +187,8 @@ export class TasksService {
     } else {
       const promo = this.dueTodayPromotion(
         ('dueDate' in data ? data.dueDate : current.dueDate) as Prisma.TaskUncheckedCreateWithoutBoardInput['dueDate'],
-        (data.status as TaskStatus) ?? current.status
+        (data.status as TaskStatus) ?? current.status,
+        today
       );
       if (promo) data = { ...data, ...promo };
     }
@@ -194,7 +196,7 @@ export class TasksService {
     if (typeof data.status === 'string' && data.status !== current.status) {
       data.completedAt = data.status === TaskStatus.done ? new Date() : null;
       // Entering Today stamps the day it was taken in work (drives rollover and the calendar).
-      if (data.status === TaskStatus.today && !('todayDate' in dto)) data.todayDate = startOfUTCDay(new Date());
+      if (data.status === TaskStatus.today && !('todayDate' in dto)) data.todayDate = startOfUTCDay(today);
     }
     return this.prisma.task.update({ where: { id }, data });
   }
