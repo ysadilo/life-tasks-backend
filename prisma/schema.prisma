@@ -40,6 +40,21 @@ enum Feeling {
   great
 }
 
+enum TaskSort {
+  priority
+  dueDate
+  effort
+  manual
+}
+
+enum TaskGroupBy {
+  area
+  priority
+  energy
+  effort
+  none
+}
+
 enum Recurrence {
   daily
   weekdays
@@ -57,6 +72,16 @@ model User {
   ownedBoards   Board[]       @relation("BoardOwner")
   memberships   BoardMember[]
   assignedTasks Task[]        @relation("TaskAssignee")
+  preferences   UserPreference?
+}
+
+// How the user last chose to sort Today and group the Backlog; a missing row means defaults.
+model UserPreference {
+  userId        String      @id
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  todaySortBy   TaskSort    @default(priority)
+  backlogGroupBy TaskGroupBy @default(area)
+  updatedAt     DateTime    @updatedAt
 }
 
 model Board {
