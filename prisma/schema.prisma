@@ -32,6 +32,14 @@ enum Energy {
   high
 }
 
+enum Feeling {
+  drained
+  heavy
+  neutral
+  good
+  great
+}
+
 enum Recurrence {
   daily
   weekdays
@@ -110,6 +118,9 @@ model Task {
   priority    Priority?
   energy      Energy?
   estimatedMinutes Int?
+  // Optional "Done + reflect" check-in, captured when the task is finished.
+  feeling       Feeling?
+  actualMinutes Int?
 
   // A recurring task is a single "series" row. Occurrences are virtual — derived
   // from the rule between dueDate (the first occurrence) and recurrenceEndDate —

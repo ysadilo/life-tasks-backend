@@ -195,6 +195,8 @@ export class TasksService {
 
     if (typeof data.status === 'string' && data.status !== current.status) {
       data.completedAt = data.status === TaskStatus.done ? new Date() : null;
+      // The check-in belongs to the completion: reopening a task discards it.
+      if (data.status !== TaskStatus.done) data = { ...data, feeling: null, actualMinutes: null };
       // Entering Today stamps the day it was taken in work (drives rollover and the calendar).
       if (data.status === TaskStatus.today && !('todayDate' in dto)) data.todayDate = startOfUTCDay(today);
     }
