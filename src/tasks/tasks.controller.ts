@@ -42,9 +42,14 @@ export class TasksController {
   }
 
   @Post()
-  async create(@CurrentUser() userId: string, @AccessToken() token: string, @Body() dto: CreateTaskDto) {
+  async create(
+    @CurrentUser() userId: string,
+    @AccessToken() token: string,
+    @Body() dto: CreateTaskDto,
+    @Query('today') today?: string
+  ) {
     const boardId = await this.boards.resolveSoloBoardId(userId, token);
-    return this.tasks.create(boardId, dto);
+    return this.tasks.create(boardId, dto, today ? new Date(today) : undefined);
   }
 
   @Patch(':id')
@@ -52,10 +57,11 @@ export class TasksController {
     @CurrentUser() userId: string,
     @AccessToken() token: string,
     @Param('id') id: string,
-    @Body() dto: UpdateTaskDto
+    @Body() dto: UpdateTaskDto,
+    @Query('today') today?: string
   ) {
     const boardId = await this.boards.resolveSoloBoardId(userId, token);
-    return this.tasks.update(id, dto, boardId);
+    return this.tasks.update(id, dto, boardId, today ? new Date(today) : undefined);
   }
 
   @Delete(':id')
