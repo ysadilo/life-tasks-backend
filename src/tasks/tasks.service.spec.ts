@@ -1,4 +1,4 @@
-import { Recurrence, TaskStatus } from '@prisma/client';
+import { Feeling, Recurrence, TaskStatus } from '@prisma/client';
 import { TasksService } from './tasks.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -39,6 +39,20 @@ describe('TasksService.update completedAt', () => {
     (prisma.task.findUnique as jest.Mock).mockResolvedValue({ id: '1', status: TaskStatus.done });
     const data = await service.update('1', { title: 'renamed' });
     expect('completedAt' in data).toBe(false);
+  });
+});
+
+describe('TasksService.update reflection', () => {
+  it('stores the check-in sent with the move to done', async () => {
+    (prisma.task.findUnique as jest.Mock).mockResolvedValue({ id: '1', status: TaskStatus.today });
+    const data = await service.update('1', { status: TaskStatus.done, feeling: Feeling.good, actualMinutes: 60 });
+    expect(data).toMatchObject({ feeling: Feeling.good, actualMinutes: 60 });
+  });
+
+  it('discards the check-in when a done task is reopened', async () => {
+    (prisma.task.findUnique as jest.Mock).mockResolvedValue({ id: '1', status: TaskStatus.done });
+    const data = await service.update('1', { status: TaskStatus.today });
+    expect(data).toMatchObject({ feeling: null, actualMinutes: null });
   });
 });
 

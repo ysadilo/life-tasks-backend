@@ -1,4 +1,4 @@
-import { Energy, Priority, Recurrence, TaskStatus } from '@prisma/client';
+import { Energy, Feeling, Priority, Recurrence, TaskStatus } from '@prisma/client';
 
 export enum ResolveMissedAction {
   done = 'done',
@@ -28,6 +28,8 @@ export class UpdateTaskDto {
   priority?: Priority;
   energy?: Energy;
   estimatedMinutes?: number;
+  feeling?: Feeling | null;
+  actualMinutes?: number | null;
   recurrence?: Recurrence | null;
   recurrenceEndDate?: string | null;
 
