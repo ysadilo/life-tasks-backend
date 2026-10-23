@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { BoardsService } from './boards.service';
-import { CreateBoardDto, InviteDto } from './board.dto';
+import { CreateBoardDto, InviteDto, RenameBoardDto } from './board.dto';
 import { Auth0AuthGuard } from '../auth/auth0-auth.guard';
 import { AccessToken, CurrentUser } from '../auth/current-user.decorator';
 
@@ -42,5 +42,34 @@ export class BoardsController {
   @Post(':id/invites')
   invite(@CurrentUser() userId: string, @Param('id') id: string, @Body() dto: InviteDto) {
     return this.boards.invite(id, userId, dto.email);
+  }
+
+  @Patch(':id')
+  rename(@CurrentUser() userId: string, @Param('id') id: string, @Body() dto: RenameBoardDto) {
+    return this.boards.rename(id, userId, dto.name);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  async remove(@CurrentUser() userId: string, @Param('id') id: string) {
+    await this.boards.remove(id, userId);
+  }
+
+  @Delete(':id/members/me')
+  @HttpCode(204)
+  async leave(@CurrentUser() userId: string, @Param('id') id: string) {
+    await this.boards.leave(id, userId);
+  }
+
+  @Delete(':id/members/:memberId')
+  @HttpCode(204)
+  async removeMember(@CurrentUser() userId: string, @Param('id') id: string, @Param('memberId') memberId: string) {
+    await this.boards.removeMember(id, userId, memberId);
+  }
+
+  @Delete(':id/invites/:inviteId')
+  @HttpCode(204)
+  async revokeInvite(@CurrentUser() userId: string, @Param('id') id: string, @Param('inviteId') inviteId: string) {
+    await this.boards.revokeInvite(id, userId, inviteId);
   }
 }

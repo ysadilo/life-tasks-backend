@@ -15,19 +15,27 @@ export class BoardsService {
       .findMany({
         where: { members: { some: { userId } } },
         orderBy: { createdAt: 'asc' },
-        include: { members: { include: { user: { select: { email: true } } } } },
+        include: {
+          members: { include: { user: { select: { email: true } } } },
+          invites: { select: { id: true, email: true }, orderBy: { createdAt: 'asc' } },
+        },
       })
       .then((boards) =>
-        boards.map(({ members, ...board }) => ({
-          ...board,
-          role: members.find((m) => m.userId === userId)?.role,
-          members: members.map((m) => ({
-            userId: m.userId,
-            email: m.user.email,
-            role: m.role,
-            isMe: m.userId === userId,
-          })),
-        }))
+        boards.map(({ members, invites, ...board }) => {
+          const role = members.find((m) => m.userId === userId)?.role;
+          return {
+            ...board,
+            role,
+            // Pending invites are the owner's business only.
+            invites: role === BoardRole.owner ? invites : [],
+            members: members.map((m) => ({
+              userId: m.userId,
+              email: m.user.email,
+              role: m.role,
+              isMe: m.userId === userId,
+            })),
+          };
+        })
       );
   }
 
@@ -47,6 +55,57 @@ export class BoardsService {
     });
     if (shared) for (const email of inviteEmails) await this.invite(board.id, ownerId, email);
     return board;
+  }
+
+  private async ownedBoard(boardId: string, userId: string) {
+    const board = await this.prisma.board.findUnique({ where: { id: boardId } });
+    if (!board) throw new NotFoundException(`Board ${boardId} not found`);
+    if (board.ownerId !== userId) throw new ForbiddenException('Only the owner can do that.');
+    return board;
+  }
+
+  async rename(boardId: string, userId: string, rawName: string) {
+    await this.ownedBoard(boardId, userId);
+    const name = rawName.trim();
+    if (!name) throw new BadRequestException('Name is required.');
+    return this.prisma.board.update({ where: { id: boardId }, data: { name } });
+  }
+
+  /** Deletes the board for everyone (tasks, life areas, members and invites cascade). Users keep at least one board. */
+  async remove(boardId: string, userId: string) {
+    await this.ownedBoard(boardId, userId);
+    const owned = await this.prisma.board.count({ where: { ownerId: userId } });
+    if (owned <= 1) throw new BadRequestException('You need to keep at least one board of your own.');
+    await this.prisma.board.delete({ where: { id: boardId } });
+  }
+
+  /** A member leaves; the owner can't (delete the board instead). Their assigned tasks become unassigned. */
+  async leave(boardId: string, userId: string) {
+    const board = await this.prisma.board.findUnique({ where: { id: boardId } });
+    if (!board) throw new NotFoundException(`Board ${boardId} not found`);
+    if (board.ownerId === userId) throw new BadRequestException("The owner can't leave; delete the board instead.");
+    await this.dropMember(boardId, userId);
+  }
+
+  async removeMember(boardId: string, ownerId: string, memberId: string) {
+    await this.ownedBoard(boardId, ownerId);
+    if (memberId === ownerId) throw new BadRequestException("The owner can't be removed.");
+    await this.dropMember(boardId, memberId);
+  }
+
+  private async dropMember(boardId: string, userId: string) {
+    const member = await this.prisma.boardMember.findUnique({ where: { boardId_userId: { boardId, userId } } });
+    if (!member) throw new NotFoundException('Not a member of this board.');
+    await this.prisma.$transaction([
+      this.prisma.task.updateMany({ where: { boardId, assigneeId: userId }, data: { assigneeId: null } }),
+      this.prisma.boardMember.delete({ where: { boardId_userId: { boardId, userId } } }),
+    ]);
+  }
+
+  async revokeInvite(boardId: string, ownerId: string, inviteId: string) {
+    await this.ownedBoard(boardId, ownerId);
+    const { count } = await this.prisma.boardInvite.deleteMany({ where: { id: inviteId, boardId } });
+    if (!count) throw new NotFoundException(`Invite ${inviteId} not found`);
   }
 
   /** Owner-only; re-inviting a pending or existing member is a no-op. */

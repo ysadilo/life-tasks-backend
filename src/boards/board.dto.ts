@@ -8,3 +8,7 @@ export class CreateBoardDto {
 export class InviteDto {
   email!: string;
 }
+
+export class RenameBoardDto {
+  name!: string;
+}

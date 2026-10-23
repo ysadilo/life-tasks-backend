@@ -86,3 +86,46 @@ describe('BoardsService bootstrap race', () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('BoardsService management', () => {
+  const board = { id: 'b1', ownerId: 'owner' };
+
+  it('only the owner can rename', async () => {
+    const prisma = { board: { findUnique: jest.fn().mockResolvedValue(board) } } as unknown as PrismaService;
+    await expect(new BoardsService(prisma).rename('b1', 'someone', 'New')).rejects.toThrow('Only the owner');
+  });
+
+  it('refuses to delete the last owned board', async () => {
+    const prisma = {
+      board: {
+        findUnique: jest.fn().mockResolvedValue(board),
+        count: jest.fn().mockResolvedValue(1),
+        delete: jest.fn(),
+      },
+    } as unknown as PrismaService;
+    await expect(new BoardsService(prisma).remove('b1', 'owner')).rejects.toThrow('at least one');
+    expect(prisma.board.delete).not.toHaveBeenCalled();
+  });
+
+  it('the owner cannot leave', async () => {
+    const prisma = { board: { findUnique: jest.fn().mockResolvedValue(board) } } as unknown as PrismaService;
+    await expect(new BoardsService(prisma).leave('b1', 'owner')).rejects.toThrow('delete the board');
+  });
+
+  it("unassigns a departing member's tasks", async () => {
+    const updateMany = jest.fn().mockReturnValue('u');
+    const del = jest.fn().mockReturnValue('d');
+    const prisma = {
+      board: { findUnique: jest.fn().mockResolvedValue(board) },
+      boardMember: { findUnique: jest.fn().mockResolvedValue({}), delete: del },
+      task: { updateMany },
+      $transaction: jest.fn().mockResolvedValue([]),
+    } as unknown as PrismaService;
+    await new BoardsService(prisma).leave('b1', 'member');
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { boardId: 'b1', assigneeId: 'member' },
+      data: { assigneeId: null },
+    });
+    expect(del).toHaveBeenCalled();
+  });
+});
