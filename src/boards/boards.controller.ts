@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { BoardsService } from './boards.service';
 import { CreateBoardDto, InviteDto, RenameBoardDto } from './board.dto';
 import { Auth0AuthGuard } from '../auth/auth0-auth.guard';
@@ -11,9 +11,9 @@ export class BoardsController {
   constructor(private readonly boards: BoardsService) {}
 
   @Get()
-  async findMine(@CurrentUser() userId: string, @AccessToken() token: string) {
+  async findMine(@CurrentUser() userId: string, @AccessToken() token: string, @Query('today') today?: string) {
     await this.boards.resolveBoardId(userId, token);
-    return this.boards.findForUser(userId);
+    return this.boards.findForUser(userId, today ? new Date(today) : undefined);
   }
 
   @Post()
@@ -26,6 +26,28 @@ export class BoardsController {
   async findInvites(@CurrentUser() userId: string, @AccessToken() token: string) {
     await this.boards.resolveBoardId(userId, token);
     return this.boards.findInvitesFor(userId);
+  }
+
+  @Get('join/:code')
+  preview(@Param('code') code: string) {
+    return this.boards.previewJoin(code);
+  }
+
+  @Post('join/:code')
+  async join(@CurrentUser() userId: string, @AccessToken() token: string, @Param('code') code: string) {
+    await this.boards.resolveBoardId(userId, token);
+    return this.boards.joinByCode(code, userId);
+  }
+
+  @Post(':id/invite-link')
+  inviteLink(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.boards.ensureInviteCode(id, userId);
+  }
+
+  @Delete(':id/invite-link')
+  @HttpCode(204)
+  async revokeInviteLink(@CurrentUser() userId: string, @Param('id') id: string) {
+    await this.boards.revokeInviteCode(id, userId);
   }
 
   @Post('invites/:inviteId/accept')

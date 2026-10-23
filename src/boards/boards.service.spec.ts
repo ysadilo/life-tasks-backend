@@ -129,3 +129,86 @@ describe('BoardsService management', () => {
     expect(del).toHaveBeenCalled();
   });
 });
+
+describe('BoardsService.findForUser counts', () => {
+  it('adds today / backlog / for-you counts per board, zero when absent', async () => {
+    const groupBy = jest
+      .fn()
+      .mockResolvedValueOnce([{ boardId: 'b1', _count: 6 }]) // today
+      .mockResolvedValueOnce([
+        { boardId: 'b1', _count: 3 },
+        { boardId: 'b2', _count: 23 },
+      ]) // backlog
+      .mockResolvedValueOnce([{ boardId: 'b1', _count: 2 }]); // mine
+    const prisma = {
+      board: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'b1', members: [{ userId: 'u1', role: 'owner', user: { email: 'a@b.co' } }], invites: [] },
+          { id: 'b2', members: [{ userId: 'u1', role: 'owner', user: { email: 'a@b.co' } }], invites: [] },
+        ]),
+      },
+      task: { groupBy },
+    } as unknown as PrismaService;
+
+    const boards = await new BoardsService(prisma).findForUser('u1', new Date('2026-10-23'));
+
+    expect(boards.map((b) => b.counts)).toEqual([
+      { today: 6, backlog: 3, forYou: 2 },
+      { today: 0, backlog: 23, forYou: 0 },
+    ]);
+  });
+});
+
+describe('BoardsService join link', () => {
+  it('only the owner can create the link, and only for shared boards', async () => {
+    const find = (board: object) =>
+      new BoardsService({ board: { findUnique: jest.fn().mockResolvedValue(board) } } as unknown as PrismaService);
+    await expect(find({ id: 'b1', ownerId: 'x', shared: true }).ensureInviteCode('b1', 'u1')).rejects.toThrow(
+      'Only the owner'
+    );
+    await expect(find({ id: 'b1', ownerId: 'u1', shared: false }).ensureInviteCode('b1', 'u1')).rejects.toThrow(
+      'Personal'
+    );
+  });
+
+  it('reuses an existing code and mints one otherwise', async () => {
+    const update = jest.fn().mockImplementation(({ data }) => Promise.resolve({ inviteCode: data.inviteCode }));
+    const prisma = (inviteCode: string | null) =>
+      ({
+        board: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'b1', ownerId: 'u1', shared: true, inviteCode }),
+          update,
+        },
+      }) as unknown as PrismaService;
+    await expect(new BoardsService(prisma('abc')).ensureInviteCode('b1', 'u1')).resolves.toEqual({ code: 'abc' });
+    expect(update).not.toHaveBeenCalled();
+    const minted = await new BoardsService(prisma(null)).ensureInviteCode('b1', 'u1');
+    expect(minted.code).toMatch(/^[\w-]{20,}$/);
+  });
+
+  it('rejects an unknown code', async () => {
+    const prisma = { board: { findUnique: jest.fn().mockResolvedValue(null) } } as unknown as PrismaService;
+    await expect(new BoardsService(prisma).previewJoin('nope')).rejects.toThrow('not valid');
+  });
+
+  it('joins as a member and uses up a matching email invite', async () => {
+    const upsert = jest.fn().mockReturnValue('m');
+    const deleteMany = jest.fn().mockReturnValue('d');
+    const prisma = {
+      board: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'b1', members: [], owner: { email: 'o@x.co' }, _count: { tasks: 0 } }),
+      },
+      user: { findUnique: jest.fn().mockResolvedValue({ email: 'me@x.co' }) },
+      boardMember: { upsert },
+      boardInvite: { deleteMany },
+      $transaction: jest.fn().mockResolvedValue([]),
+    } as unknown as PrismaService;
+    await expect(new BoardsService(prisma).joinByCode('abc', 'u1')).resolves.toEqual({ boardId: 'b1' });
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: { boardId: 'b1', userId: 'u1', role: 'member' } })
+    );
+    expect(deleteMany).toHaveBeenCalled();
+  });
+});
