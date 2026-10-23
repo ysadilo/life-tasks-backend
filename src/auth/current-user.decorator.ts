@@ -12,3 +12,9 @@ export const CurrentUser = createParamDecorator((_data: unknown, ctx: ExecutionC
 
 /** The raw Auth0 access token — used to call `/userinfo` when bootstrapping a user. */
 export const AccessToken = createParamDecorator((_data: unknown, ctx: ExecutionContext): string => auth(ctx).token);
+
+/** The board the client is acting on (`X-Board-Id`), if it named one. Membership is checked by BoardsService.resolveBoardId. */
+export const RequestedBoardId = createParamDecorator((_data: unknown, ctx: ExecutionContext): string | undefined => {
+  const header = ctx.switchToHttp().getRequest<AuthedRequest>().headers['x-board-id'];
+  return typeof header === 'string' && header ? header : undefined;
+});

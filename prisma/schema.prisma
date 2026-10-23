@@ -69,19 +69,20 @@ model User {
   email     String   @unique
   createdAt DateTime @default(now())
 
-  ownedBoards   Board[]       @relation("BoardOwner")
+  ownedBoards   Board[]         @relation("BoardOwner")
+  invitesSent   BoardInvite[]
   memberships   BoardMember[]
-  assignedTasks Task[]        @relation("TaskAssignee")
+  assignedTasks Task[]          @relation("TaskAssignee")
   preferences   UserPreference?
 }
 
 // How the user last chose to sort Today and group the Backlog; a missing row means defaults.
 model UserPreference {
-  userId        String      @id
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  todaySortBy   TaskSort    @default(priority)
+  userId         String      @id
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  todaySortBy    TaskSort    @default(priority)
   backlogGroupBy TaskGroupBy @default(area)
-  updatedAt     DateTime    @updatedAt
+  updatedAt      DateTime    @updatedAt
 }
 
 model Board {
@@ -90,8 +91,12 @@ model Board {
   ownerId String
   owner   User   @relation("BoardOwner", fields: [ownerId], references: [id])
 
+  // Shared boards list their members and take invites; personal ones stay private.
+  shared Boolean @default(false)
+
   members   BoardMember[]
-  tasks Task[]
+  invites   BoardInvite[]
+  tasks     Task[]
   lifeAreas LifeArea[]
 
   createdAt DateTime @default(now())
@@ -127,25 +132,40 @@ model BoardMember {
   @@id([boardId, userId])
 }
 
-model Task {
-  id          String     @id @default(cuid())
-  boardId     String
-  board       Board      @relation(fields: [boardId], references: [id], onDelete: Cascade)
+// Pending invite by email (the invitee may not have signed in yet). Accepting
+// it turns it into a BoardMember row and deletes it.
+model BoardInvite {
+  id        String   @id @default(cuid())
+  boardId   String
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  email     String
+  invitedBy String
+  inviter   User     @relation(fields: [invitedBy], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 
-  title       String
-  description String?
-  dueDate     DateTime?
-  status      TaskStatus @default(backlog)
-  todayDate   DateTime?
-  completedAt DateTime?
-  areaId      String?
-  area        LifeArea?  @relation(fields: [areaId], references: [id], onDelete: SetNull)
-  priority    Priority?
-  energy      Energy?
+  @@unique([boardId, email])
+  @@index([email])
+}
+
+model Task {
+  id      String @id @default(cuid())
+  boardId String
+  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  title            String
+  description      String?
+  dueDate          DateTime?
+  status           TaskStatus @default(backlog)
+  todayDate        DateTime?
+  completedAt      DateTime?
+  areaId           String?
+  area             LifeArea?  @relation(fields: [areaId], references: [id], onDelete: SetNull)
+  priority         Priority?
+  energy           Energy?
   estimatedMinutes Int?
   // Optional "Done + reflect" check-in, captured when the task is finished.
-  feeling       Feeling?
-  actualMinutes Int?
+  feeling          Feeling?
+  actualMinutes    Int?
 
   // A recurring task is a single "series" row. Occurrences are virtual — derived
   // from the rule between dueDate (the first occurrence) and recurrenceEndDate —
@@ -153,22 +173,22 @@ model Task {
   // occurrence days have been ticked off.
   // ponytail: completedDates as an array grows ~365/yr for a daily task; move to
   // a TaskOccurrence table if that ever matters.
-  recurrence        Recurrence?
-  recurrenceEndDate DateTime?
-  completedDates    DateTime[] @default([])
+  recurrence                   Recurrence?
+  recurrenceEndDate            DateTime?
+  completedDates               DateTime[]  @default([])
   // Occurrence day(s) missed (past, unresolved, no occurrence today) surfaced in
   // Triage. In practice holds at most one entry — a new miss replaces the old.
-  missedDates       DateTime[] @default([])
+  missedDates                  DateTime[]  @default([])
   // Occurrence day(s) forced onto Today outside the normal cadence, e.g. via the
   // Triage "add to today" resolution for a missed occurrence.
-  extraTodayDates   DateTime[] @default([])
+  extraTodayDates              DateTime[]  @default([])
   // The most recent missed occurrence already resolved (any action — done,
   // dismissed, or added to today). Stops detection from re-flagging the same
   // day right after it's cleared from missedDates.
   lastResolvedMissedOccurrence DateTime?
 
-  assigneeId  String?
-  assignee    User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  assigneeId String?
+  assignee   User?   @relation("TaskAssignee", fields: [assigneeId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

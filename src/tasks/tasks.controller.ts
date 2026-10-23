@@ -4,7 +4,7 @@ import { TasksService } from './tasks.service';
 import { BoardsService } from '../boards/boards.service';
 import { CreateTaskDto, UpdateTaskDto } from './task.dto';
 import { Auth0AuthGuard } from '../auth/auth0-auth.guard';
-import { AccessToken, CurrentUser } from '../auth/current-user.decorator';
+import { AccessToken, CurrentUser, RequestedBoardId } from '../auth/current-user.decorator';
 
 @Controller('tasks')
 @UseGuards(Auth0AuthGuard)
@@ -18,13 +18,14 @@ export class TasksController {
   async findMany(
     @CurrentUser() userId: string,
     @AccessToken() token: string,
+    @RequestedBoardId() requestedBoard: string | undefined,
     @Query('status') status?: TaskStatus,
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('recurring') recurring?: string,
     @Query('today') today?: string
   ) {
-    const boardId = await this.boards.resolveSoloBoardId(userId, token);
+    const boardId = await this.boards.resolveBoardId(userId, token, requestedBoard);
     return this.tasks.findMany({
       boardId,
       status,
@@ -36,8 +37,13 @@ export class TasksController {
   }
 
   @Get(':id')
-  async findOne(@CurrentUser() userId: string, @AccessToken() token: string, @Param('id') id: string) {
-    const boardId = await this.boards.resolveSoloBoardId(userId, token);
+  async findOne(
+    @CurrentUser() userId: string,
+    @AccessToken() token: string,
+    @RequestedBoardId() requestedBoard: string | undefined,
+    @Param('id') id: string
+  ) {
+    const boardId = await this.boards.resolveBoardId(userId, token, requestedBoard);
     return this.tasks.findOne(id, boardId);
   }
 
@@ -45,10 +51,11 @@ export class TasksController {
   async create(
     @CurrentUser() userId: string,
     @AccessToken() token: string,
+    @RequestedBoardId() requestedBoard: string | undefined,
     @Body() dto: CreateTaskDto,
     @Query('today') today?: string
   ) {
-    const boardId = await this.boards.resolveSoloBoardId(userId, token);
+    const boardId = await this.boards.resolveBoardId(userId, token, requestedBoard);
     return this.tasks.create(boardId, dto, today ? new Date(today) : undefined);
   }
 
@@ -56,17 +63,23 @@ export class TasksController {
   async update(
     @CurrentUser() userId: string,
     @AccessToken() token: string,
+    @RequestedBoardId() requestedBoard: string | undefined,
     @Param('id') id: string,
     @Body() dto: UpdateTaskDto,
     @Query('today') today?: string
   ) {
-    const boardId = await this.boards.resolveSoloBoardId(userId, token);
+    const boardId = await this.boards.resolveBoardId(userId, token, requestedBoard);
     return this.tasks.update(id, dto, boardId, today ? new Date(today) : undefined);
   }
 
   @Delete(':id')
-  async remove(@CurrentUser() userId: string, @AccessToken() token: string, @Param('id') id: string) {
-    const boardId = await this.boards.resolveSoloBoardId(userId, token);
+  async remove(
+    @CurrentUser() userId: string,
+    @AccessToken() token: string,
+    @RequestedBoardId() requestedBoard: string | undefined,
+    @Param('id') id: string
+  ) {
+    const boardId = await this.boards.resolveBoardId(userId, token, requestedBoard);
     return this.tasks.remove(id, boardId);
   }
 }
