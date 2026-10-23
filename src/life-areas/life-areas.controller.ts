@@ -3,7 +3,7 @@ import { LifeAreasService } from './life-areas.service';
 import { BoardsService } from '../boards/boards.service';
 import { UpsertLifeAreaDto } from './life-area.dto';
 import { Auth0AuthGuard } from '../auth/auth0-auth.guard';
-import { AccessToken, CurrentUser } from '../auth/current-user.decorator';
+import { AccessToken, CurrentUser, RequestedBoardId } from '../auth/current-user.decorator';
 
 @Controller('life-areas')
 @UseGuards(Auth0AuthGuard)
@@ -14,14 +14,23 @@ export class LifeAreasController {
   ) {}
 
   @Get()
-  async findMany(@CurrentUser() userId: string, @AccessToken() token: string) {
-    const boardId = await this.boards.resolveSoloBoardId(userId, token);
+  async findMany(
+    @CurrentUser() userId: string,
+    @AccessToken() token: string,
+    @RequestedBoardId() requestedBoard: string | undefined
+  ) {
+    const boardId = await this.boards.resolveBoardId(userId, token, requestedBoard);
     return this.lifeAreas.findMany(boardId);
   }
 
   @Post()
-  async create(@CurrentUser() userId: string, @AccessToken() token: string, @Body() dto: UpsertLifeAreaDto) {
-    const boardId = await this.boards.resolveSoloBoardId(userId, token);
+  async create(
+    @CurrentUser() userId: string,
+    @AccessToken() token: string,
+    @RequestedBoardId() requestedBoard: string | undefined,
+    @Body() dto: UpsertLifeAreaDto
+  ) {
+    const boardId = await this.boards.resolveBoardId(userId, token, requestedBoard);
     return this.lifeAreas.create(boardId, dto.name);
   }
 
@@ -29,16 +38,22 @@ export class LifeAreasController {
   async rename(
     @CurrentUser() userId: string,
     @AccessToken() token: string,
+    @RequestedBoardId() requestedBoard: string | undefined,
     @Param('id') id: string,
     @Body() dto: UpsertLifeAreaDto
   ) {
-    const boardId = await this.boards.resolveSoloBoardId(userId, token);
+    const boardId = await this.boards.resolveBoardId(userId, token, requestedBoard);
     return this.lifeAreas.rename(id, boardId, dto.name);
   }
 
   @Delete(':id')
-  async remove(@CurrentUser() userId: string, @AccessToken() token: string, @Param('id') id: string) {
-    const boardId = await this.boards.resolveSoloBoardId(userId, token);
+  async remove(
+    @CurrentUser() userId: string,
+    @AccessToken() token: string,
+    @RequestedBoardId() requestedBoard: string | undefined,
+    @Param('id') id: string
+  ) {
+    const boardId = await this.boards.resolveBoardId(userId, token, requestedBoard);
     await this.lifeAreas.remove(id, boardId);
   }
 }

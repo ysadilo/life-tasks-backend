@@ -21,7 +21,7 @@ export class PreferencesController {
   @Patch()
   async update(@CurrentUser() userId: string, @AccessToken() token: string, @Body() dto: UpdatePreferencesDto) {
     // Resolving the solo board bootstraps the User row the preference row points at.
-    await this.boards.resolveSoloBoardId(userId, token);
+    await this.boards.resolveBoardId(userId, token);
     return this.preferences.update(userId, dto);
   }
 }
