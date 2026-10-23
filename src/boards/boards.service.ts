@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { BoardRole } from '@prisma/client';
+import { BoardRole, TaskStatus } from '@prisma/client';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Seeded for every new board; order also picks the display colour (order % 10). */
@@ -9,8 +10,48 @@ const DEFAULT_LIFE_AREAS = ['Home', 'Personal', 'Work', 'Health', 'Social'];
 export class BoardsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Boards the user belongs to (owned or joined), oldest first. */
-  findForUser(userId: string) {
+  /**
+   * Boards the user belongs to (owned or joined), oldest first, each with its
+   * open-work counts for the caller's local `today` (one-off tasks only —
+   * recurring occurrences are virtual): tasks on Today, in the backlog, and
+   * on Today assigned to the caller.
+   */
+  async findForUser(userId: string, today?: Date) {
+    const boards = await this.findMemberBoards(userId);
+    const ids = boards.map((b) => b.id);
+    const day = today ? new Date(today) : undefined;
+    day?.setUTCHours(0, 0, 0, 0);
+    // A Today task from an earlier day is about to roll into Triage, so it doesn't count.
+    const todayWhere = {
+      boardId: { in: ids },
+      recurrence: null,
+      status: TaskStatus.today,
+      ...(day ? { todayDate: { gte: day } } : {}),
+    };
+
+    const [todayCounts, backlogCounts, mineCounts] = await Promise.all([
+      this.prisma.task.groupBy({ by: ['boardId'], where: todayWhere, _count: true }),
+      this.prisma.task.groupBy({
+        by: ['boardId'],
+        where: { boardId: { in: ids }, recurrence: null, status: TaskStatus.backlog },
+        _count: true,
+      }),
+      this.prisma.task.groupBy({ by: ['boardId'], where: { ...todayWhere, assigneeId: userId }, _count: true }),
+    ]);
+    const countOf = (rows: { boardId: string; _count: number }[], id: string) =>
+      rows.find((r) => r.boardId === id)?._count ?? 0;
+
+    return boards.map((board) => ({
+      ...board,
+      counts: {
+        today: countOf(todayCounts, board.id),
+        backlog: countOf(backlogCounts, board.id),
+        forYou: countOf(mineCounts, board.id),
+      },
+    }));
+  }
+
+  private findMemberBoards(userId: string) {
     return this.prisma.board
       .findMany({
         where: { members: { some: { userId } } },
@@ -28,6 +69,7 @@ export class BoardsService {
             role,
             // Pending invites are the owner's business only.
             invites: role === BoardRole.owner ? invites : [],
+            inviteCode: role === BoardRole.owner ? board.inviteCode : null,
             members: members.map((m) => ({
               userId: m.userId,
               email: m.user.email,
@@ -148,6 +190,70 @@ export class BoardsService {
       memberCount: i.board._count.members,
       invitedBy: i.inviter.email,
     }));
+  }
+
+  /** Owner: the board's join link code, created on first use. Only shared boards have one. */
+  async ensureInviteCode(boardId: string, userId: string) {
+    const board = await this.ownedBoard(boardId, userId);
+    if (!board.shared) throw new BadRequestException('Personal boards cannot be shared.');
+    if (board.inviteCode) return { code: board.inviteCode };
+    const updated = await this.prisma.board.update({
+      where: { id: boardId },
+      data: { inviteCode: randomBytes(16).toString('base64url') },
+    });
+    return { code: updated.inviteCode };
+  }
+
+  /** Disables the link; the next `ensureInviteCode` mints a fresh one, so this doubles as "reset". */
+  async revokeInviteCode(boardId: string, userId: string) {
+    await this.ownedBoard(boardId, userId);
+    await this.prisma.board.update({ where: { id: boardId }, data: { inviteCode: null } });
+  }
+
+  private async boardByCode(code: string) {
+    const board = await this.prisma.board.findUnique({
+      where: { inviteCode: code },
+      include: {
+        members: { include: { user: { select: { email: true } } } },
+        owner: { select: { email: true } },
+        _count: { select: { tasks: true } },
+      },
+    });
+    if (!board) throw new NotFoundException('This invite link is not valid.');
+    return board;
+  }
+
+  /** What the join page shows: whose board it is and who is already there. */
+  async previewJoin(code: string) {
+    const board = await this.boardByCode(code);
+    return {
+      boardId: board.id,
+      boardName: board.name,
+      invitedBy: board.owner.email,
+      members: board.members.map((m) => m.user.email),
+      taskCount: board._count.tasks,
+    };
+  }
+
+  /** Anyone signed in with the code joins as a member (joining twice is a no-op); a matching email invite is used up. */
+  async joinByCode(code: string, userId: string) {
+    const board = await this.boardByCode(code);
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    await this.prisma.$transaction([
+      this.prisma.boardMember.upsert({
+        where: { boardId_userId: { boardId: board.id, userId } },
+        update: {},
+        create: { boardId: board.id, userId, role: BoardRole.member },
+      }),
+      ...(user
+        ? [
+            this.prisma.boardInvite.deleteMany({
+              where: { boardId: board.id, email: { equals: user.email, mode: 'insensitive' as const } },
+            }),
+          ]
+        : []),
+    ]);
+    return { boardId: board.id };
   }
 
   /** The invite must be addressed to the caller's email; returns it and the caller's id. */

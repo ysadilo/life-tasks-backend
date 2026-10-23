@@ -93,6 +93,8 @@ model Board {
 
   // Shared boards list their members and take invites; personal ones stay private.
   shared Boolean @default(false)
+  // Anyone signed in who has this code can join as a member; null = link disabled.
+  inviteCode String? @unique
 
   members   BoardMember[]
   invites   BoardInvite[]
