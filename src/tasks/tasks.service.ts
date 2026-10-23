@@ -146,9 +146,17 @@ export class TasksService {
       const promo = this.dueTodayPromotion(data.dueDate, (data.status as TaskStatus) ?? TaskStatus.backlog, today);
       if (promo) data = { ...data, ...promo };
     }
-    return this.prisma.task.create({
-      data: { ...data, boardId },
+    const insert = () => this.prisma.task.create({ data: { ...data, boardId } });
+    return data.assigneeId ? this.assertAssignable(boardId, data.assigneeId).then(insert) : insert();
+  }
+
+  /** Tasks can only be handed to someone who is on the board. */
+  private async assertAssignable(boardId: string, assigneeId?: string | null) {
+    if (!assigneeId) return;
+    const member = await this.prisma.boardMember.findUnique({
+      where: { boardId_userId: { boardId, userId: assigneeId } },
     });
+    if (!member) throw new BadRequestException('Assignee is not a member of this board.');
   }
 
   /** A one-off task due today (or earlier) belongs on Today, not the backlog. */
@@ -165,6 +173,7 @@ export class TasksService {
 
   async update(id: string, dto: UpdateTaskDto, boardId?: string, today = new Date()) {
     const current = await this.findOne(id, boardId);
+    await this.assertAssignable(current.boardId, dto.assigneeId);
 
     if (dto.occurrenceDate !== undefined) {
       return this.toggleOccurrence(current.id, dto.occurrenceDate, dto.occurrenceDone ?? true);

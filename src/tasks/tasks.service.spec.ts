@@ -10,6 +10,7 @@ const prisma = {
     updateMany: jest.fn(),
     create: jest.fn((args) => args.data),
   },
+  boardMember: { findUnique: jest.fn() },
 } as unknown as PrismaService;
 
 const service = new TasksService(prisma);
@@ -331,5 +332,21 @@ describe('TasksService resolving a missed occurrence', () => {
     (prisma.task.findUnique as jest.Mock).mockResolvedValue({ ...recurringTask, missedDates: [] });
     const data = await service.update('r1', { resolveMissedAction: 'dismiss' } as never);
     expect(data).toEqual({ ...recurringTask, missedDates: [] });
+  });
+});
+
+describe('TasksService assignee', () => {
+  it('rejects an assignee who is not on the board', async () => {
+    (prisma.boardMember.findUnique as jest.Mock).mockResolvedValue(null);
+    await expect(service.create('b1', { title: 'x', assigneeId: 'stranger' })).rejects.toThrow('not a member');
+    expect(prisma.task.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts a member, and null to unassign without a lookup', async () => {
+    (prisma.boardMember.findUnique as jest.Mock).mockResolvedValue({ role: 'member' });
+    (prisma.task.findUnique as jest.Mock).mockResolvedValue({ id: '1', boardId: 'b1', status: TaskStatus.today });
+    await expect(service.update('1', { assigneeId: 'u2' })).resolves.toMatchObject({ assigneeId: 'u2' });
+    await service.update('1', { assigneeId: null });
+    expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(1);
   });
 });

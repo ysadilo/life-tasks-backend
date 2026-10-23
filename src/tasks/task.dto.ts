@@ -11,6 +11,8 @@ export class CreateTaskDto {
   description?: string;
   dueDate?: string;
   areaId?: string | null;
+  /** A member of the board, or null to leave the task unassigned. */
+  assigneeId?: string | null;
   priority?: Priority;
   energy?: Energy;
   estimatedMinutes?: number;
@@ -25,6 +27,8 @@ export class UpdateTaskDto {
   status?: TaskStatus;
   todayDate?: string;
   areaId?: string | null;
+  /** A member of the board, or null to leave the task unassigned. */
+  assigneeId?: string | null;
   priority?: Priority;
   energy?: Energy;
   estimatedMinutes?: number;
