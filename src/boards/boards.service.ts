@@ -21,7 +21,12 @@ export class BoardsService {
         boards.map(({ members, ...board }) => ({
           ...board,
           role: members.find((m) => m.userId === userId)?.role,
-          members: members.map((m) => ({ userId: m.userId, email: m.user.email, role: m.role })),
+          members: members.map((m) => ({
+            userId: m.userId,
+            email: m.user.email,
+            role: m.role,
+            isMe: m.userId === userId,
+          })),
         }))
       );
   }
