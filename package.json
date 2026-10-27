@@ -24,7 +24,8 @@
     "jose": "^6.2.10",
     "reflect-metadata": "^0.2.2",
     "rrule": "^2.8.1",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.5",
@@ -32,6 +33,7 @@
     "@nestjs/testing": "^10.4.0",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.14.13",
+    "@types/web-push": "^3.6.4",
     "@typescript-eslint/eslint-plugin": "^7.16.0",
     "@typescript-eslint/parser": "^7.16.0",
     "eslint": "^8.57.0",

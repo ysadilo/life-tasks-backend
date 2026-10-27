@@ -90,6 +90,8 @@ model User {
   memberships   BoardMember[]
   assignedTasks Task[]          @relation("TaskAssignee")
   preferences   UserPreference?
+  pushSubscriptions PushSubscription[]
+  boardMutes    BoardMute[]
 }
 
 // How the user last chose to sort Today and group the Backlog; a missing row means defaults.
@@ -115,6 +117,7 @@ model Board {
   members   BoardMember[]
   invites   BoardInvite[]
   activity  Activity[]
+  mutes     BoardMute[]
   tasks     Task[]
   lifeAreas LifeArea[]
 
@@ -147,6 +150,29 @@ model BoardMember {
 
   board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([boardId, userId])
+}
+
+// A browser/device that agreed to Web Push; one user can have several. Dropped when the push service says it's gone.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// The user turned push notifications off for this board; no row = notifications on.
+model BoardMute {
+  boardId String
+  userId  String
+  board   Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([boardId, userId])
 }

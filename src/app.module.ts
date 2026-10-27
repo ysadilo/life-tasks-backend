@@ -6,6 +6,7 @@ import { LifeAreasModule } from './life-areas/life-areas.module';
 import { ActivityModule } from './activity/activity.module';
 import { PreferencesModule } from './preferences/preferences.module';
 import { FeedbackModule } from './feedback/feedback.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { FeedbackModule } from './feedback/feedback.module';
     PreferencesModule,
     ActivityModule,
     FeedbackModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

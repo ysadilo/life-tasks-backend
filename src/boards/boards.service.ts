@@ -2,13 +2,17 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { BoardRole, TaskStatus } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /** Seeded for every new board; order also picks the display colour (order % 10). */
 const DEFAULT_LIFE_AREAS = ['Home', 'Personal', 'Work', 'Health', 'Social'];
 
 @Injectable()
 export class BoardsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService
+  ) {}
 
   /**
    * Boards the user belongs to (owned or joined), oldest first, each with its
@@ -165,11 +169,13 @@ export class BoardsService {
     });
     if (member) return null;
 
-    return this.prisma.boardInvite.upsert({
+    const invite = await this.prisma.boardInvite.upsert({
       where: { boardId_email: { boardId, email } },
       update: {},
       create: { boardId, email, invitedBy: userId },
     });
+    await this.notifications.notifyInvited(email, board.name, userId);
+    return invite;
   }
 
   async findInvitesFor(userId: string) {
