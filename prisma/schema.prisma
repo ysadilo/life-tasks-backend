@@ -19,6 +19,12 @@ enum BoardRole {
   member
 }
 
+enum ActivityType {
+  added
+  finished
+  assigned
+}
+
 enum Priority {
   P1
   P2
@@ -61,6 +67,14 @@ enum Recurrence {
   weekly
   biweekly
   monthly
+  custom
+}
+
+// Unit of a `custom` recurrence ("every N days / weeks / months").
+enum RecurrenceUnit {
+  day
+  week
+  month
 }
 
 // Populated from Clerk on first sign-in; Clerk owns credentials.
@@ -71,6 +85,8 @@ model User {
 
   ownedBoards   Board[]         @relation("BoardOwner")
   invitesSent   BoardInvite[]
+  activityDone  Activity[]    @relation("ActivityActor")
+  activityAbout Activity[]    @relation("ActivityTarget")
   memberships   BoardMember[]
   assignedTasks Task[]          @relation("TaskAssignee")
   preferences   UserPreference?
@@ -98,6 +114,7 @@ model Board {
 
   members   BoardMember[]
   invites   BoardInvite[]
+  activity  Activity[]
   tasks     Task[]
   lifeAreas LifeArea[]
 
@@ -132,6 +149,23 @@ model BoardMember {
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([boardId, userId])
+}
+
+// Feed of what members did on a shared board. The title is a snapshot so entries
+// outlive the task; `targetUserId` is who a task was assigned to (null = unassigned).
+model Activity {
+  id           String       @id @default(cuid())
+  boardId      String
+  board        Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  actorId      String
+  actor        User         @relation("ActivityActor", fields: [actorId], references: [id], onDelete: Cascade)
+  type         ActivityType
+  taskTitle    String
+  targetUserId String?
+  target       User?        @relation("ActivityTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  createdAt    DateTime     @default(now())
+
+  @@index([boardId, createdAt])
 }
 
 // Pending invite by email (the invitee may not have signed in yet). Accepting
@@ -176,6 +210,8 @@ model Task {
   // ponytail: completedDates as an array grows ~365/yr for a daily task; move to
   // a TaskOccurrence table if that ever matters.
   recurrence                   Recurrence?
+  recurrenceInterval           Int?
+  recurrenceUnit               RecurrenceUnit?
   recurrenceEndDate            DateTime?
   completedDates               DateTime[]  @default([])
   // Occurrence day(s) missed (past, unresolved, no occurrence today) surfaced in

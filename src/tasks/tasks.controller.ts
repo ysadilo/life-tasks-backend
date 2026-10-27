@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } f
 import { TaskStatus } from '@prisma/client';
 import { TasksService } from './tasks.service';
 import { BoardsService } from '../boards/boards.service';
+import { ActivityService } from '../activity/activity.service';
 import { CreateTaskDto, UpdateTaskDto } from './task.dto';
 import { Auth0AuthGuard } from '../auth/auth0-auth.guard';
 import { AccessToken, CurrentUser, RequestedBoardId } from '../auth/current-user.decorator';
@@ -11,7 +12,8 @@ import { AccessToken, CurrentUser, RequestedBoardId } from '../auth/current-user
 export class TasksController {
   constructor(
     private readonly tasks: TasksService,
-    private readonly boards: BoardsService
+    private readonly boards: BoardsService,
+    private readonly activity: ActivityService
   ) {}
 
   @Get()
@@ -56,7 +58,9 @@ export class TasksController {
     @Query('today') today?: string
   ) {
     const boardId = await this.boards.resolveBoardId(userId, token, requestedBoard);
-    return this.tasks.create(boardId, dto, today ? new Date(today) : undefined);
+    const task = await this.tasks.create(boardId, dto, today ? new Date(today) : undefined);
+    await this.activity.recordAdded(boardId, userId, task);
+    return task;
   }
 
   @Patch(':id')
@@ -69,7 +73,10 @@ export class TasksController {
     @Query('today') today?: string
   ) {
     const boardId = await this.boards.resolveBoardId(userId, token, requestedBoard);
-    return this.tasks.update(id, dto, boardId, today ? new Date(today) : undefined);
+    const before = await this.tasks.findOne(id, boardId);
+    const after = await this.tasks.update(id, dto, boardId, today ? new Date(today) : undefined);
+    await this.activity.recordUpdate(boardId, userId, before, after, dto);
+    return after;
   }
 
   @Delete(':id')
