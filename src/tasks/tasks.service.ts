@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Task, TaskStatus } from '@prisma/client';
+import { Prisma, Recurrence, RecurrenceUnit, Task, TaskStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ResolveMissedAction, UpdateTaskDto } from './task.dto';
-import { occursOn, previousOccurrenceBefore } from './recurrence.util';
+import { customRecurrenceError, occursOn, previousOccurrenceBefore } from './recurrence.util';
 
 export interface FindTasksFilter {
   boardId: string;
@@ -139,6 +139,8 @@ export class TasksService {
     if (data.recurrence && !data.dueDate) {
       throw new BadRequestException('A recurring task needs a start date (dueDate).');
     }
+    const customError = customRecurrenceError(data.recurrence, data.recurrenceInterval, data.recurrenceUnit);
+    if (customError) throw new BadRequestException(customError);
     if (data.recurrence) {
       // A recurring series is not a board item; keep it off Today / Done.
       data = { ...data, status: TaskStatus.backlog, todayDate: null };
@@ -191,6 +193,12 @@ export class TasksService {
     if (recurrence && !dueDate) {
       throw new BadRequestException('A recurring task needs a start date (dueDate).');
     }
+    const customError = customRecurrenceError(
+      recurrence as Recurrence | null,
+      ('recurrenceInterval' in data ? data.recurrenceInterval : current.recurrenceInterval) as number | null,
+      ('recurrenceUnit' in data ? data.recurrenceUnit : current.recurrenceUnit) as RecurrenceUnit | null
+    );
+    if (customError) throw new BadRequestException(customError);
     if (recurrence) {
       data = { ...data, status: TaskStatus.backlog, todayDate: null };
     } else {

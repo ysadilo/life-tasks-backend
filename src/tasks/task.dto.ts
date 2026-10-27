@@ -1,4 +1,4 @@
-import { Energy, Feeling, Priority, Recurrence, TaskStatus } from '@prisma/client';
+import { Energy, Feeling, Priority, Recurrence, RecurrenceUnit, TaskStatus } from '@prisma/client';
 
 export enum ResolveMissedAction {
   done = 'done',
@@ -17,6 +17,9 @@ export class CreateTaskDto {
   energy?: Energy;
   estimatedMinutes?: number;
   recurrence?: Recurrence;
+  /** Only for `recurrence: custom`: repeat every `recurrenceInterval` × `recurrenceUnit`. */
+  recurrenceInterval?: number;
+  recurrenceUnit?: RecurrenceUnit;
   recurrenceEndDate?: string;
 }
 
@@ -35,6 +38,8 @@ export class UpdateTaskDto {
   feeling?: Feeling | null;
   actualMinutes?: number | null;
   recurrence?: Recurrence | null;
+  recurrenceInterval?: number | null;
+  recurrenceUnit?: RecurrenceUnit | null;
   recurrenceEndDate?: string | null;
 
   // Tick / untick one occurrence day of a recurring task (mutually exclusive with
