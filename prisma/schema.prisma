@@ -67,6 +67,14 @@ enum Recurrence {
   weekly
   biweekly
   monthly
+  custom
+}
+
+// Unit of a `custom` recurrence ("every N days / weeks / months").
+enum RecurrenceUnit {
+  day
+  week
+  month
 }
 
 // Populated from Clerk on first sign-in; Clerk owns credentials.
@@ -202,6 +210,8 @@ model Task {
   // ponytail: completedDates as an array grows ~365/yr for a daily task; move to
   // a TaskOccurrence table if that ever matters.
   recurrence                   Recurrence?
+  recurrenceInterval           Int?
+  recurrenceUnit               RecurrenceUnit?
   recurrenceEndDate            DateTime?
   completedDates               DateTime[]  @default([])
   // Occurrence day(s) missed (past, unresolved, no occurrence today) surfaced in
