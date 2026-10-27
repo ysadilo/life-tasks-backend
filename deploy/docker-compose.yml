@@ -24,6 +24,9 @@ services:
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:?set AUTH0_AUDIENCE in .env}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_FEEDBACK_REPO: ${GITHUB_FEEDBACK_REPO:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
     depends_on: [postgres]
     networks: [life-tasks]
 
