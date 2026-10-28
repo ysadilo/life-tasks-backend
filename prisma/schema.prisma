@@ -14,6 +14,26 @@ enum TaskStatus {
   done
 }
 
+// What a connected AI agent (MCP client) is allowed to do; managed in Settings > AI agents.
+enum AgentPermission {
+  read
+  add
+  edit
+  done
+  triage
+  delete
+}
+
+enum AgentActionKind {
+  read
+  added
+  edited
+  moved
+  done
+  triaged
+  deleted
+}
+
 enum BoardRole {
   owner
   member
@@ -83,15 +103,16 @@ model User {
   email     String   @unique
   createdAt DateTime @default(now())
 
-  ownedBoards   Board[]         @relation("BoardOwner")
-  invitesSent   BoardInvite[]
-  activityDone  Activity[]    @relation("ActivityActor")
-  activityAbout Activity[]    @relation("ActivityTarget")
-  memberships   BoardMember[]
-  assignedTasks Task[]          @relation("TaskAssignee")
-  preferences   UserPreference?
+  ownedBoards       Board[]            @relation("BoardOwner")
+  invitesSent       BoardInvite[]
+  activityDone      Activity[]         @relation("ActivityActor")
+  activityAbout     Activity[]         @relation("ActivityTarget")
+  memberships       BoardMember[]
+  assignedTasks     Task[]             @relation("TaskAssignee")
+  preferences       UserPreference?
   pushSubscriptions PushSubscription[]
-  boardMutes    BoardMute[]
+  boardMutes        BoardMute[]
+  agentConnections  AgentConnection[]
 }
 
 // How the user last chose to sort Today and group the Backlog; a missing row means defaults.
@@ -100,6 +121,8 @@ model UserPreference {
   user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   todaySortBy    TaskSort    @default(priority)
   backlogGroupBy TaskGroupBy @default(area)
+  // Master switch for AI agents (Settings > AI agents); off blocks every connected agent.
+  agentsEnabled  Boolean     @default(true)
   updatedAt      DateTime    @updatedAt
 }
 
@@ -110,7 +133,7 @@ model Board {
   owner   User   @relation("BoardOwner", fields: [ownerId], references: [id])
 
   // Shared boards list their members and take invites; personal ones stay private.
-  shared Boolean @default(false)
+  shared     Boolean @default(false)
   // Anyone signed in who has this code can join as a member; null = link disabled.
   inviteCode String? @unique
 
@@ -171,8 +194,8 @@ model PushSubscription {
 model BoardMute {
   boardId String
   userId  String
-  board   Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([boardId, userId])
 }
@@ -226,6 +249,9 @@ model Task {
   energy           Energy?
   estimatedMinutes Int?
   // Optional "Done + reflect" check-in, captured when the task is finished.
+  // Name of the AI agent that created / completed the task, when one did.
+  createdVia       String?
+  completedVia     String?
   feeling          Feeling?
   actualMinutes    Int?
 
@@ -239,13 +265,13 @@ model Task {
   recurrenceInterval           Int?
   recurrenceUnit               RecurrenceUnit?
   recurrenceEndDate            DateTime?
-  completedDates               DateTime[]  @default([])
+  completedDates               DateTime[]      @default([])
   // Occurrence day(s) missed (past, unresolved, no occurrence today) surfaced in
   // Triage. In practice holds at most one entry — a new miss replaces the old.
-  missedDates                  DateTime[]  @default([])
+  missedDates                  DateTime[]      @default([])
   // Occurrence day(s) forced onto Today outside the normal cadence, e.g. via the
   // Triage "add to today" resolution for a missed occurrence.
-  extraTodayDates              DateTime[]  @default([])
+  extraTodayDates              DateTime[]      @default([])
   // The most recent missed occurrence already resolved (any action — done,
   // dismissed, or added to today). Stops detection from re-flagging the same
   // day right after it's cleared from missedDates.
@@ -259,4 +285,43 @@ model Task {
 
   @@index([boardId, status])
   @@index([boardId, dueDate])
+}
+
+// One OAuth-connected AI agent (an MCP client) per user. Created on its first
+// call with safe defaults; the user widens or narrows it in Settings.
+model AgentConnection {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // OAuth client id from the access token (`azp`), so each agent app is its own connection.
+  clientId    String
+  name        String
+  permissions AgentPermission[] @default([read, add])
+  // Boards the agent may touch; membership is still re-checked on every call.
+  boardIds    String[]          @default([])
+  lastUsedAt  DateTime?
+  // A revoked connection stays blocked even though its OAuth token is still valid until it expires.
+  revokedAt   DateTime?
+  createdAt   DateTime          @default(now())
+
+  actions AgentAction[]
+
+  @@unique([userId, clientId])
+}
+
+// What an agent did, newest first in the "Agent activity" feed. Titles are
+// snapshots so entries outlive the task.
+model AgentAction {
+  id           String          @id @default(cuid())
+  connectionId String
+  connection   AgentConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  kind         AgentActionKind
+  boardId      String?
+  taskId       String?
+  taskTitle    String?
+  // Free text shown after the title, e.g. "to Backlog · P2 · 30m · Social".
+  detail       String?
+  createdAt    DateTime        @default(now())
+
+  @@index([connectionId, createdAt])
 }
