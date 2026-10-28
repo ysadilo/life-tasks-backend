@@ -53,10 +53,14 @@ describe('AgentsService.connect', () => {
     agentConnection: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
     user: { findUnique: jest.fn() },
     board: { findMany: jest.fn() },
+    userPreference: { findUnique: jest.fn(), upsert: jest.fn() },
   };
   const service = new AgentsService(prisma as never);
 
-  beforeEach(() => jest.resetAllMocks());
+  beforeEach(() => {
+    jest.resetAllMocks();
+    prisma.userPreference.findUnique.mockResolvedValue(null); // no row = agents on
+  });
 
   it('creates a first-time agent with read + add on personal boards only', async () => {
     prisma.agentConnection.findUnique.mockResolvedValue(null);
@@ -71,6 +75,12 @@ describe('AgentsService.connect', () => {
       select: { id: true },
     });
     expect(prisma.agentConnection.create.mock.calls[0][0].data).toMatchObject({ name: 'Claude', boardIds: ['b1'] });
+  });
+
+  it('blocks every agent while the master switch is off', async () => {
+    prisma.agentConnection.findUnique.mockResolvedValue({ id: 'c1', revokedAt: null });
+    prisma.userPreference.findUnique.mockResolvedValue({ agentsEnabled: false });
+    await expect(service.connect('u1', 'client')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('blocks a revoked connection and an unknown user', async () => {

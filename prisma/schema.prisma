@@ -121,6 +121,8 @@ model UserPreference {
   user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   todaySortBy    TaskSort    @default(priority)
   backlogGroupBy TaskGroupBy @default(area)
+  // Master switch for AI agents (Settings > AI agents); off blocks every connected agent.
+  agentsEnabled  Boolean     @default(true)
   updatedAt      DateTime    @updatedAt
 }
 

@@ -104,6 +104,9 @@ export class AgentsService {
   async connect(userId: string, clientId: string, clientName?: string): Promise<AgentConnection> {
     const existing = await this.prisma.agentConnection.findUnique({ where: { userId_clientId: { userId, clientId } } });
     if (existing?.revokedAt) throw new ForbiddenException('Access was revoked in Life Tasks › Settings › AI agents.');
+    if (!(await this.isEnabled(userId))) {
+      throw new ForbiddenException('AI agents are turned off in Life Tasks › Settings › AI agents.');
+    }
     if (this.overRateLimit(existing?.id ?? `${userId}:${clientId}`)) {
       throw new HttpException('Too many requests', HttpStatus.TOO_MANY_REQUESTS);
     }
@@ -130,6 +133,22 @@ export class AgentsService {
         lastUsedAt: new Date(),
       },
     });
+  }
+
+  /** The master "Allow agents" switch; on unless the user turned it off. */
+  async isEnabled(userId: string): Promise<boolean> {
+    const row = await this.prisma.userPreference.findUnique({ where: { userId }, select: { agentsEnabled: true } });
+    return row?.agentsEnabled ?? true;
+  }
+
+  async setEnabled(userId: string, enabled: boolean) {
+    if (typeof enabled !== 'boolean') throw new BadRequestException('"enabled" must be true or false.');
+    await this.prisma.userPreference.upsert({
+      where: { userId },
+      update: { agentsEnabled: enabled },
+      create: { userId, agentsEnabled: enabled },
+    });
+    return { enabled };
   }
 
   private overRateLimit(key: string) {

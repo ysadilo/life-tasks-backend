@@ -5,3 +5,8 @@ export class UpdateAgentDto {
   /** Boards the agent may use; each must be one the caller belongs to. */
   boardIds?: string[];
 }
+
+export class UpdateAgentSettingsDto {
+  /** The master "Allow agents" switch. */
+  enabled!: boolean;
+}

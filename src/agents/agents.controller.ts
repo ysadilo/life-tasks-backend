@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, UseGuards } from '@nestjs/common';
 import { AgentsService } from './agents.service';
-import { UpdateAgentDto } from './agent.dto';
+import { UpdateAgentDto, UpdateAgentSettingsDto } from './agent.dto';
 import { Auth0AuthGuard } from '../auth/auth0-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
@@ -12,12 +12,18 @@ export class AgentsController {
 
   @Get()
   async findMany(@CurrentUser() userId: string) {
-    return { serverUrl: process.env.MCP_PUBLIC_URL ?? null, agents: await this.agents.findForUser(userId) };
+    const [enabled, agents] = await Promise.all([this.agents.isEnabled(userId), this.agents.findForUser(userId)]);
+    return { serverUrl: process.env.MCP_PUBLIC_URL ?? null, enabled, agents };
   }
 
   @Get('activity')
   activity(@CurrentUser() userId: string) {
     return this.agents.findActivity(userId);
+  }
+
+  @Patch('settings')
+  setEnabled(@CurrentUser() userId: string, @Body() dto: UpdateAgentSettingsDto) {
+    return this.agents.setEnabled(userId, dto.enabled);
   }
 
   @Patch(':id')
