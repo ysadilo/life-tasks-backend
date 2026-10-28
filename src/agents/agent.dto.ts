@@ -12,11 +12,13 @@ export class UpdateAgentSettingsDto {
 }
 
 export class ConnectRequestDto {
-  /** The signed token the Auth0 post-login Action put in the approval link. */
-  token!: string;
+  /** The id of the pending sign-in the approval page was opened with. */
+  request!: string;
 }
 
 export class AuthorizeAgentDto extends ConnectRequestDto {
   permissions?: AgentPermission[];
   boardIds?: string[];
+  /** The person pressed Cancel. */
+  deny?: boolean;
 }

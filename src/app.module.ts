@@ -8,6 +8,7 @@ import { PreferencesModule } from './preferences/preferences.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AgentsModule } from './agents/agents.module';
+import { OAuthModule } from './oauth/oauth.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { AgentsModule } from './agents/agents.module';
     FeedbackModule,
     NotificationsModule,
     AgentsModule,
+    OAuthModule,
   ],
 })
 export class AppModule {}

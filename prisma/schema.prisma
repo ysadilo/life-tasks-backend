@@ -113,6 +113,7 @@ model User {
   pushSubscriptions PushSubscription[]
   boardMutes        BoardMute[]
   agentConnections  AgentConnection[]
+  OAuthToken        OAuthToken[]
 }
 
 // How the user last chose to sort Today and group the Backlog; a missing row means defaults.
@@ -324,4 +325,78 @@ model AgentAction {
   createdAt    DateTime        @default(now())
 
   @@index([connectionId, createdAt])
+}
+
+// --- The API as its own OAuth server for AI assistants (MCP clients) -------------------------
+// Auth0 only proves who the person is; clients, codes and tokens live here, so the number of
+// connected assistants is not limited by an Auth0 plan. Secrets are stored as SHA-256 hashes.
+
+// An assistant that registered itself (RFC 7591). Public clients only; PKCE is required.
+model OAuthClient {
+  id           String    @id // the client_id
+  redirectUris String[]
+  // The rest of the registration (client_name, grant_types, …) as sent.
+  metadata     Json
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  requests OAuthRequest[]
+  codes    OAuthCode[]
+  tokens   OAuthToken[]
+
+  @@index([createdAt])
+}
+
+// An /authorize request waiting for the person to sign in with Auth0 and then approve.
+model OAuthRequest {
+  id               String      @id @default(cuid())
+  clientId         String
+  client           OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  redirectUri      String
+  codeChallenge    String
+  state            String?
+  resource         String?
+  scope            String?
+  // PKCE verifier for our own sign-in round trip to Auth0.
+  upstreamVerifier String
+  // Set once Auth0 has signed the person in (their Auth0 `sub`).
+  userId           String?
+  expiresAt        DateTime
+  createdAt        DateTime    @default(now())
+
+  @@index([expiresAt])
+}
+
+// A one-time authorization code, valid for about a minute.
+model OAuthCode {
+  hash          String      @id
+  clientId      String
+  client        OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  userId        String
+  redirectUri   String
+  codeChallenge String
+  resource      String?
+  scope         String?
+  expiresAt     DateTime
+
+  @@index([expiresAt])
+}
+
+// An access token (short) and its refresh token (rotated on every use).
+model OAuthToken {
+  id               String      @id @default(cuid())
+  accessHash       String      @unique
+  refreshHash      String      @unique
+  clientId         String
+  client           OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource         String?
+  scope            String?
+  expiresAt        DateTime
+  refreshExpiresAt DateTime
+  createdAt        DateTime    @default(now())
+
+  @@index([userId, clientId])
+  @@index([refreshExpiresAt])
 }
