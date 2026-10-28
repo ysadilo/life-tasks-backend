@@ -6,10 +6,14 @@ import { TasksService } from '../tasks/tasks.service';
 import { ActivityService } from '../activity/activity.service';
 import { AgentActionInput, AgentsService } from './agents.service';
 import type { UpdateTaskDto } from '../tasks/task.dto';
+import { hasOccurrenceOn, isOccurrenceDone } from '../tasks/recurrence.util';
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
 const priority = z.enum(['P1', 'P2', 'P3', 'P4']);
 const energy = z.enum(['low', 'medium', 'high']);
+const date = day
+  .optional()
+  .describe("The user's current date (YYYY-MM-DD). Defaults to today in UTC; pass it if you know it.");
 const board = z.string().optional().describe('Board id or name. Defaults to the first board enabled for you.');
 
 const DAY_MS = 24 * 3600_000;
@@ -90,12 +94,54 @@ export class AgentToolkit {
   }
 
   /** A task on an enabled board; anything else reads as not found so other boards don't leak. */
-  private async ownTask(id: string): Promise<Task> {
+  private async ownTask(id: string, { allowRecurring = false } = {}): Promise<Task> {
     const task = await this.deps.tasks.findOne(id).catch(() => null);
     const boards = await this.boards();
     if (!task || !boards.some((b) => b.id === task.boardId)) throw new Error(`Task ${id} not found.`);
-    if (task.recurrence) throw new Error('Recurring tasks cannot be changed by agents yet.');
+    if (task.recurrence && !allowRecurring) {
+      throw new Error(
+        'Recurring tasks can be read and ticked off for a day, but not changed or deleted by agents yet.'
+      );
+    }
     return task;
+  }
+
+  /** The user's calendar day an agent means; UTC midnight. */
+  private dayOf(value?: string): Date {
+    return value ? new Date(`${value}T00:00:00Z`) : startOfUTCDay(new Date());
+  }
+
+  /** A recurring series as one of `day`'s tasks. */
+  private briefOccurrence(task: Task, areas: Map<string, string>, on: Date) {
+    return {
+      ...this.brief(task, areas),
+      status: TaskStatus.today,
+      recurring: true,
+      recurrence: task.recurrence,
+      occurrenceDate: isoDay(on),
+      done: isOccurrenceDone(task, on),
+    };
+  }
+
+  /** Ticks off a recurring task's occurrence on `day`; the series itself stays open. */
+  private async completeOccurrence(task: Task, day: Date) {
+    const on = isoDay(day) as string;
+    if (!hasOccurrenceOn(task, day)) throw new Error(`"${task.title}" is not scheduled on ${on}.`);
+    const areas = await this.areaNames([task.boardId]);
+    if (isOccurrenceDone(task, day))
+      return this.reply({ ...this.briefOccurrence(task, areas, day), note: 'Already ticked off.' });
+
+    const dto = { occurrenceDate: on, occurrenceDone: true } as UpdateTaskDto;
+    const updated = await this.deps.tasks.update(task.id, dto, task.boardId);
+    await this.deps.activity.recordUpdate(task.boardId, this.userId, task, updated, dto);
+    await this.log({
+      kind: 'done',
+      boardId: task.boardId,
+      taskId: task.id,
+      taskTitle: task.title,
+      detail: `for ${on}`,
+    });
+    return this.reply(this.briefOccurrence(updated, areas, day));
   }
 
   private brief(task: Task, areas: Map<string, string>) {
@@ -153,15 +199,18 @@ export class AgentToolkit {
     server.registerTool(
       'list_tasks',
       {
-        description: 'Tasks on a board: Today, backlog, done, or a due-date range.',
+        description:
+          "Tasks on a board: Today, backlog, done, or a due-date range. status 'today' also includes recurring tasks " +
+          '(daily, weekly…) that occur on `date` and are not ticked off yet; they have recurring: true and an occurrenceDate.',
         inputSchema: {
           board,
           status: z.enum(['today', 'backlog', 'needs_triage', 'done']).optional(),
+          date,
           from: day.optional().describe('Only tasks due, done or planned on/after this day.'),
           to: day.optional().describe('Only tasks due, done or planned on/before this day.'),
         },
       },
-      async ({ board: ref, status, from, to }) => {
+      async ({ board: ref, status, date: on, from, to }) => {
         this.need('read');
         const b = await this.resolveBoard(ref);
         const found = await tasks.findMany({
@@ -171,9 +220,20 @@ export class AgentToolkit {
           to: to ? new Date(to) : undefined,
         });
         const areas = await this.areaNames([b.id]);
+        const list: object[] = found.map((t) => this.brief(t, areas));
+        if (status === TaskStatus.today) {
+          // Recurring series are one row each; the app works out which fall on the day, and so do we.
+          const day = this.dayOf(on);
+          const series = await tasks.findMany({ boardId: b.id, recurring: true });
+          list.push(
+            ...series
+              .filter((t) => hasOccurrenceOn(t, day) && !isOccurrenceDone(t, day))
+              .map((t) => this.briefOccurrence(t, areas, day))
+          );
+        }
         const label = status ? status[0].toUpperCase() + status.slice(1).replace('_', ' ') : 'All tasks';
-        await this.log({ kind: 'read', boardId: b.id, detail: `${label} (${plural(found.length, 'task')})` });
-        return this.reply(found.map((t) => this.brief(t, areas)));
+        await this.log({ kind: 'read', boardId: b.id, detail: `${label} (${plural(list.length, 'task')})` });
+        return this.reply(list);
       }
     );
 
@@ -182,11 +242,19 @@ export class AgentToolkit {
       { description: 'One task with its notes and check-in.', inputSchema: { id: z.string() } },
       async ({ id }) => {
         this.need('read');
-        const task = await this.ownTask(id);
+        const task = await this.ownTask(id, { allowRecurring: true });
         const areas = await this.areaNames([task.boardId]);
         await this.log({ kind: 'read', boardId: task.boardId, detail: `"${task.title}"` });
         return this.reply({
           ...this.brief(task, areas),
+          ...(task.recurrence && {
+            recurring: true,
+            recurrence: task.recurrence,
+            recurrenceInterval: task.recurrenceInterval,
+            recurrenceUnit: task.recurrenceUnit,
+            recurrenceEndDate: isoDay(task.recurrenceEndDate),
+            completedDates: task.completedDates.map((d) => isoDay(d)),
+          }),
           feeling: task.feeling,
           actualMinutes: task.actualMinutes,
           completedAt: task.completedAt,
@@ -295,16 +363,20 @@ export class AgentToolkit {
     server.registerTool(
       'complete_task',
       {
-        description: 'Mark a task done, optionally with how it felt and the time it took.',
+        description:
+          'Mark a task done, optionally with how it felt and the time it took. For a recurring task this ticks ' +
+          'off the occurrence on `date` (how it felt and the time are not recorded for those).',
         inputSchema: {
           id: z.string(),
+          date,
           feeling: z.enum(['drained', 'heavy', 'neutral', 'good', 'great']).optional(),
           actualMinutes: z.number().int().min(1).max(1440).optional(),
         },
       },
-      async ({ id, ...checkIn }) => {
+      async ({ id, date: on, ...checkIn }) => {
         this.need('done');
-        const before = await this.ownTask(id);
+        const before = await this.ownTask(id, { allowRecurring: true });
+        if (before.recurrence) return this.completeOccurrence(before, this.dayOf(on));
         const dto = { status: TaskStatus.done, ...checkIn } as UpdateTaskDto;
         const updated = await tasks.update(id, dto, before.boardId);
         const after = await this.deps.prisma.task.update({

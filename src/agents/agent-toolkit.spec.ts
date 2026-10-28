@@ -30,8 +30,9 @@ async function connect(conn: AgentConnection) {
       findOne: jest.fn().mockResolvedValue(task),
       remove: jest.fn(),
       findMany: jest.fn().mockResolvedValue([task]),
+      update: jest.fn(),
     },
-    activity: { recordAdded: jest.fn() },
+    activity: { recordAdded: jest.fn(), recordUpdate: jest.fn() },
     agents: { record: jest.fn() },
   };
   const server = new McpServer({ name: 'test', version: '0' });
@@ -90,5 +91,84 @@ describe('AgentToolkit', () => {
     expect((await call('create_task', { title: '  ' })).isError).toBe(true);
     expect((await call('create_task', { title: 'x', priority: 'P9' })).isError).toBe(true);
     expect(deps.tasks.create).not.toHaveBeenCalled();
+  });
+
+  describe('recurring tasks', () => {
+    const series = (over: Record<string, unknown>) => ({
+      id: 'r1',
+      boardId: 'b1',
+      title: 'Vitamin D',
+      status: 'backlog',
+      recurrence: 'daily',
+      dueDate: new Date('2026-10-01T00:00:00Z'),
+      recurrenceEndDate: null,
+      completedDates: [],
+      extraTodayDates: [],
+      areaId: null,
+      ...over,
+    });
+    const TODAY = '2026-10-28';
+
+    it("lists today's recurring tasks that are not ticked off, next to the one-off ones", async () => {
+      const { deps, call } = await connect(connection());
+      const daily = series({ id: 'r1', title: 'Vitamin D' });
+      const doneToday = series({ id: 'r2', title: 'Reading', completedDates: [new Date(`${TODAY}T00:00:00Z`)] });
+      const weekly = series({ id: 'r3', title: 'Laundry', recurrence: 'weekly' }); // 1, 8, 15, 22, 29 Oct
+      deps.tasks.findMany.mockImplementation(async (filter: { recurring?: boolean }) =>
+        filter.recurring
+          ? [daily, doneToday, weekly]
+          : [{ id: 't1', boardId: 'b1', title: 'Pay rent', status: 'today' }]
+      );
+
+      const result = await call('list_tasks', { status: 'today', date: TODAY });
+      const tasks = JSON.parse(result.content[0].text) as {
+        title: string;
+        recurring?: boolean;
+        occurrenceDate?: string;
+      }[];
+
+      expect(tasks.map((t) => t.title)).toEqual(['Pay rent', 'Vitamin D']);
+      expect(tasks[1]).toMatchObject({ recurring: true, recurrence: 'daily', occurrenceDate: TODAY, status: 'today' });
+    });
+
+    it("doesn't pull recurring tasks into other lists", async () => {
+      const { deps, call } = await connect(connection());
+      await call('list_tasks', { status: 'backlog' });
+      expect(deps.tasks.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it("ticks off one day's occurrence and leaves the series open", async () => {
+      const { deps, call } = await connect(connection({ permissions: ['read', 'done'] }));
+      const daily = series({});
+      deps.tasks.findOne.mockResolvedValue(daily);
+      deps.tasks.update.mockResolvedValue({ ...daily, completedDates: [new Date(`${TODAY}T00:00:00Z`)] });
+
+      const result = await call('complete_task', { id: 'r1', date: TODAY });
+
+      expect(result.isError).toBeFalsy();
+      expect(deps.tasks.update).toHaveBeenCalledWith('r1', { occurrenceDate: TODAY, occurrenceDone: true }, 'b1');
+      expect(deps.prisma.task.update).not.toHaveBeenCalled();
+      expect(deps.activity.recordUpdate).toHaveBeenCalled();
+      expect(JSON.parse(result.content[0].text)).toMatchObject({ recurring: true, occurrenceDate: TODAY, done: true });
+    });
+
+    it("is a no-op for an occurrence that is already done, and refuses a day it isn't scheduled", async () => {
+      const { deps, call } = await connect(connection({ permissions: ['read', 'done'] }));
+      deps.tasks.findOne.mockResolvedValue(series({ completedDates: [new Date(`${TODAY}T00:00:00Z`)] }));
+      const again = await call('complete_task', { id: 'r1', date: TODAY });
+      expect(JSON.parse(again.content[0].text).note).toBe('Already ticked off.');
+      expect(deps.tasks.update).not.toHaveBeenCalled();
+
+      deps.tasks.findOne.mockResolvedValue(series({ recurrence: 'weekly' }));
+      expect((await call('complete_task', { id: 'r1', date: TODAY })).isError).toBe(true);
+    });
+
+    it('still keeps agents from editing or deleting a recurring series', async () => {
+      const { deps, call } = await connect(connection({ permissions: ['read', 'edit', 'delete'] }));
+      deps.tasks.findOne.mockResolvedValue(series({}));
+      expect((await call('update_task', { id: 'r1', title: 'x' })).isError).toBe(true);
+      expect((await call('delete_task', { id: 'r1' })).isError).toBe(true);
+      expect(deps.tasks.remove).not.toHaveBeenCalled();
+    });
   });
 });
