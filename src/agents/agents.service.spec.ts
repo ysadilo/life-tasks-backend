@@ -1,4 +1,7 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import { verifyConnectToken } from '../auth/verify-connect-token';
+
+jest.mock('../auth/verify-connect-token', () => ({ verifyConnectToken: jest.fn() }));
 import { AgentActionKind } from '@prisma/client';
 import { AgentsService, agentDisplayName, groupActivity, type ActivityRow } from './agents.service';
 
@@ -90,5 +93,57 @@ describe('AgentsService.connect', () => {
     prisma.agentConnection.findUnique.mockResolvedValue(null);
     prisma.user.findUnique.mockResolvedValue(null);
     await expect(service.connect('u1', 'client')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe('AgentsService approval (Auth0 connect token)', () => {
+  const prisma = {
+    agentConnection: { findUnique: jest.fn(), upsert: jest.fn() },
+    user: { findUnique: jest.fn() },
+    boardMember: { count: jest.fn() },
+  };
+  const service = new AgentsService(prisma as never);
+  const claims = { user_id: 'u1', client_id: 'client-1', client_name: 'claude-ai' };
+  // The signature check lives in verify-connect-token (jose is ESM-only, so it is mocked here).
+  const signedBy = (payload: Record<string, unknown>) => (verifyConnectToken as jest.Mock).mockResolvedValue(payload);
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    process.env.AGENT_CONNECT_SECRET = 'connect-secret';
+    signedBy(claims);
+  });
+
+  it('says who is connecting and whether it already has access', async () => {
+    prisma.agentConnection.findUnique.mockResolvedValue({ revokedAt: null });
+    expect(await service.findConnectRequest('u1', 'token')).toEqual({
+      name: 'Claude',
+      alreadyConnected: true,
+    });
+
+    prisma.agentConnection.findUnique.mockResolvedValue({ revokedAt: new Date() });
+    expect((await service.findConnectRequest('u1', 'token')).alreadyConnected).toBe(false);
+  });
+
+  it("saves the user's choice, and re-enables a revoked connection", async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
+    prisma.boardMember.count.mockResolvedValue(1);
+    prisma.agentConnection.upsert.mockImplementation((args) => Promise.resolve(args));
+
+    await service.authorize('u1', 'token', { permissions: ['read', 'edit'], boardIds: ['b1'] });
+
+    const { where, update, create } = prisma.agentConnection.upsert.mock.calls[0][0];
+    expect(where).toEqual({ userId_clientId: { userId: 'u1', clientId: 'client-1' } });
+    expect(update).toEqual({ name: 'Claude', permissions: ['read', 'edit'], boardIds: ['b1'], revokedAt: null });
+    expect(create).toMatchObject({ userId: 'u1', clientId: 'client-1' });
+  });
+
+  it('rejects a token for someone else, a forged or expired one, and a server with no secret', async () => {
+    await expect(service.findConnectRequest('u2', 'token')).rejects.toBeInstanceOf(ForbiddenException);
+
+    (verifyConnectToken as jest.Mock).mockRejectedValue(new Error('bad signature'));
+    await expect(service.findConnectRequest('u1', 'token')).rejects.toBeInstanceOf(ForbiddenException);
+
+    delete process.env.AGENT_CONNECT_SECRET;
+    await expect(service.findConnectRequest('u1', 'token')).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });

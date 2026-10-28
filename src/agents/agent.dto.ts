@@ -10,3 +10,13 @@ export class UpdateAgentSettingsDto {
   /** The master "Allow agents" switch. */
   enabled!: boolean;
 }
+
+export class ConnectRequestDto {
+  /** The signed token the Auth0 post-login Action put in the approval link. */
+  token!: string;
+}
+
+export class AuthorizeAgentDto extends ConnectRequestDto {
+  permissions?: AgentPermission[];
+  boardIds?: string[];
+}

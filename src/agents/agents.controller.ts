@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { AgentsService } from './agents.service';
-import { UpdateAgentDto, UpdateAgentSettingsDto } from './agent.dto';
+import { AuthorizeAgentDto, ConnectRequestDto, UpdateAgentDto, UpdateAgentSettingsDto } from './agent.dto';
 import { Auth0AuthGuard } from '../auth/auth0-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
@@ -19,6 +19,17 @@ export class AgentsController {
   @Get('activity')
   activity(@CurrentUser() userId: string) {
     return this.agents.findActivity(userId);
+  }
+
+  @Post('connect-request')
+  @HttpCode(200)
+  findConnectRequest(@CurrentUser() userId: string, @Body() dto: ConnectRequestDto) {
+    return this.agents.findConnectRequest(userId, dto.token);
+  }
+
+  @Post('connect')
+  authorize(@CurrentUser() userId: string, @Body() dto: AuthorizeAgentDto) {
+    return this.agents.authorize(userId, dto.token, dto);
   }
 
   @Patch('settings')

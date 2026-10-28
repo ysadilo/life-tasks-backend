@@ -10,6 +10,7 @@ import { ActivityService } from '../activity/activity.service';
 import { verifyAccessToken } from '../auth/verify-access-token';
 
 jest.mock('../auth/verify-access-token', () => ({ verifyAccessToken: jest.fn() }));
+jest.mock('../auth/verify-connect-token', () => ({ verifyConnectToken: jest.fn() }));
 
 describe('McpController over HTTP', () => {
   let app: INestApplication;

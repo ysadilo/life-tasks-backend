@@ -5,11 +5,14 @@ import {
   HttpStatus,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { AgentActionKind, AgentConnection, AgentPermission, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { verifyConnectToken } from '../auth/verify-connect-token';
 import type { UpdateAgentDto } from './agent.dto';
 
+const DEFAULT_PERMISSIONS: AgentPermission[] = [AgentPermission.read, AgentPermission.add];
 const RATE_LIMIT_PER_MINUTE = 120;
 const LAST_USED_REFRESH_MS = 60_000;
 const GROUP_WINDOW_MS = 5 * 60_000;
@@ -179,6 +182,12 @@ export class AgentsService {
     const connection = await this.prisma.agentConnection.findFirst({ where: { id, userId, revokedAt: null } });
     if (!connection) throw new NotFoundException('Agent not found.');
 
+    const data = await this.validatedChanges(userId, dto);
+    return this.prisma.agentConnection.update({ where: { id }, data });
+  }
+
+  /** Checks a permissions / boards edit against the enum and the caller's memberships. */
+  private async validatedChanges(userId: string, dto: UpdateAgentDto) {
     const data: Prisma.AgentConnectionUpdateInput = {};
     if (dto.permissions !== undefined) {
       const valid = Object.values(AgentPermission) as string[];
@@ -196,7 +205,52 @@ export class AgentsService {
       if (member !== ids.length) throw new ForbiddenException('You are not a member of one of those boards.');
       data.boardIds = ids;
     }
-    return this.prisma.agentConnection.update({ where: { id }, data });
+    return data;
+  }
+
+  /**
+   * Reads the token the Auth0 post-login Action signs when it sends a user here to
+   * approve an agent (see deploy/auth0). It names the OAuth client and must belong
+   * to the signed-in user, so it can't be replayed for someone else.
+   */
+  private async readConnectToken(userId: string, token: string) {
+    const secret = process.env.AGENT_CONNECT_SECRET;
+    if (!secret) throw new ServiceUnavailableException('Agent approval is not configured (AGENT_CONNECT_SECRET).');
+    try {
+      const payload = await verifyConnectToken(token, secret);
+      if (payload.user_id !== userId || typeof payload.client_id !== 'string') throw new Error('wrong user');
+      const name = typeof payload.client_name === 'string' ? payload.client_name : undefined;
+      return { clientId: payload.client_id, name: agentDisplayName(name) };
+    } catch {
+      throw new ForbiddenException('This approval link is invalid or has expired.');
+    }
+  }
+
+  /** What the approval page shows: who is connecting, and whether it already has access. */
+  async findConnectRequest(userId: string, token: string) {
+    const { clientId, name } = await this.readConnectToken(userId, token);
+    const existing = await this.prisma.agentConnection.findUnique({ where: { userId_clientId: { userId, clientId } } });
+    return { name, alreadyConnected: !!existing && !existing.revokedAt };
+  }
+
+  /** The user's choice on the approval page: creates the connection, or updates / re-enables it. */
+  async authorize(userId: string, token: string, dto: UpdateAgentDto) {
+    const { clientId, name } = await this.readConnectToken(userId, token);
+    if (!(await this.prisma.user.findUnique({ where: { id: userId } }))) {
+      throw new ForbiddenException('Open Life Tasks and sign in once before connecting an agent.');
+    }
+    const { permissions, boardIds } = await this.validatedChanges(userId, dto);
+    const choice = {
+      name,
+      permissions: (permissions as AgentPermission[] | undefined) ?? DEFAULT_PERMISSIONS,
+      boardIds: (boardIds as string[] | undefined) ?? [],
+      revokedAt: null,
+    };
+    return this.prisma.agentConnection.upsert({
+      where: { userId_clientId: { userId, clientId } },
+      update: choice,
+      create: { userId, clientId, ...choice },
+    });
   }
 
   async revoke(userId: string, id: string) {
