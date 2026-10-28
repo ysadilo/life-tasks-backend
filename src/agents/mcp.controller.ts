@@ -7,7 +7,8 @@ import { TasksService } from '../tasks/tasks.service';
 import { ActivityService } from '../activity/activity.service';
 import { AgentsService } from './agents.service';
 import { AgentToolkit } from './agent-toolkit';
-import { verifyAccessToken } from '../auth/verify-access-token';
+import { OAuthService } from '../oauth/oauth.service';
+import { protectedResourceMetadata } from '../oauth/oauth.config';
 
 type McpRequest = IncomingMessage & { body?: unknown };
 
@@ -35,7 +36,8 @@ export class McpController {
     private readonly prisma: PrismaService,
     private readonly tasks: TasksService,
     private readonly activity: ActivityService,
-    private readonly agents: AgentsService
+    private readonly agents: AgentsService,
+    private readonly oauth: OAuthService
   ) {}
 
   private get resourceUrl() {
@@ -46,11 +48,7 @@ export class McpController {
   @Get('.well-known/oauth-protected-resource')
   metadata(@Res() res: ServerResponse) {
     if (!this.resourceUrl) return send(res, 503, { error: 'MCP is not configured (MCP_PUBLIC_URL)' });
-    send(res, 200, {
-      resource: this.resourceUrl,
-      authorization_servers: [`https://${process.env.AUTH0_DOMAIN}/`],
-      bearer_methods_supported: ['header'],
-    });
+    send(res, 200, protectedResourceMetadata());
   }
 
   @Get('mcp')
@@ -76,15 +74,14 @@ export class McpController {
     if (!header?.startsWith('Bearer ')) return unauthorized('Missing bearer token');
 
     let userId: string;
-    let clientId: unknown;
+    let clientId: string;
     try {
-      const payload = await verifyAccessToken(header.slice('Bearer '.length), resource);
-      userId = payload.sub as string;
-      clientId = payload.azp ?? payload.client_id;
+      const info = await this.oauth.verifyAccessToken(header.slice('Bearer '.length));
+      userId = info.extra.userId;
+      clientId = info.clientId;
     } catch {
       return unauthorized('Invalid access token');
     }
-    if (typeof clientId !== 'string') return unauthorized('Token has no client id');
 
     let connection;
     try {

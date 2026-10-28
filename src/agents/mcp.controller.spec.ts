@@ -7,22 +7,21 @@ import { AgentsService } from './agents.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TasksService } from '../tasks/tasks.service';
 import { ActivityService } from '../activity/activity.service';
-import { verifyAccessToken } from '../auth/verify-access-token';
-
-jest.mock('../auth/verify-access-token', () => ({ verifyAccessToken: jest.fn() }));
-jest.mock('../auth/verify-connect-token', () => ({ verifyConnectToken: jest.fn() }));
+import { OAuthService } from '../oauth/oauth.service';
 
 describe('McpController over HTTP', () => {
   let app: INestApplication;
   let url: string;
   const connect = jest.fn();
   const record = jest.fn();
+  const verifyAccessToken = jest.fn();
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [McpController],
       providers: [
         { provide: AgentsService, useValue: { connect, record } },
+        { provide: OAuthService, useValue: { verifyAccessToken } },
         { provide: PrismaService, useValue: {} },
         { provide: TasksService, useValue: {} },
         { provide: ActivityService, useValue: {} },
@@ -54,13 +53,13 @@ describe('McpController over HTTP', () => {
     const res = await fetch(new URL('./.well-known/oauth-protected-resource', url));
     expect(await res.json()).toEqual({
       resource: url,
-      authorization_servers: ['https://tenant.auth0.com/'],
+      authorization_servers: [`${new URL(url).origin}/api/oauth`],
       bearer_methods_supported: ['header'],
     });
   });
 
   it('serves a real MCP client: verifies the token for the MCP audience, names the agent from initialize', async () => {
-    (verifyAccessToken as jest.Mock).mockResolvedValue({ sub: 'u1', azp: 'client-1' });
+    verifyAccessToken.mockResolvedValue({ clientId: 'client-1', extra: { userId: 'u1' } });
     connect.mockResolvedValue({ id: 'c1', name: 'Claude', permissions: ['read'], boardIds: [] });
 
     const client = new Client({ name: 'claude-ai', version: '1' });
@@ -71,12 +70,12 @@ describe('McpController over HTTP', () => {
     await client.close();
 
     expect(tools.map((t) => t.name)).toContain('create_task');
-    expect(verifyAccessToken).toHaveBeenCalledWith('good', url);
+    expect(verifyAccessToken).toHaveBeenCalledWith('good');
     expect(connect).toHaveBeenCalledWith('u1', 'client-1', 'claude-ai');
   });
 
   it('refuses a connection that was revoked', async () => {
-    (verifyAccessToken as jest.Mock).mockResolvedValue({ sub: 'u1', azp: 'client-1' });
+    verifyAccessToken.mockResolvedValue({ clientId: 'client-1', extra: { userId: 'u1' } });
     const { ForbiddenException } = jest.requireActual('@nestjs/common');
     connect.mockRejectedValue(new ForbiddenException('Access was revoked'));
 
