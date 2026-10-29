@@ -71,7 +71,7 @@ export class PhotoImportService {
     const key = process.env.GEMINI_API_KEY;
     if (!key) throw new ServiceUnavailableException('Photo import is not configured');
 
-    const model = process.env.GEMINI_MODEL ?? 'gemini-3.6-flash';
+    const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
     const res = await fetch(`${GEMINI_URL}/${model}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },

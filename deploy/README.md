@@ -29,6 +29,10 @@ cd ~/life-tasks-backend/deploy
 cp .env.example .env && nano .env    # POSTGRES_PASSWORD, AUTH0_DOMAIN, AUTH0_AUDIENCE
 ```
 
+Optional: add `GEMINI_API_KEY` to that `.env` (and `docker compose up -d` again) to turn on "Task from a photo";
+without it `POST /api/tasks/from-photo` answers 503. The free Gemini tier lets Google use the photos to improve its
+products, so use a paid key before real users send photos.
+
 ## Access — no port forwarding
 
 The Pi has no public IP:
