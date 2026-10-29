@@ -34,6 +34,7 @@ services:
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-}
     depends_on: [postgres]
     networks: [life-tasks]
 
