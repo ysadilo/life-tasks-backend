@@ -1,4 +1,4 @@
-import { BadGatewayException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { BadGatewayException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { PhotoDraft, toDrafts } from './photo-import.mapper';
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -55,6 +55,8 @@ const STUB: PhotoDraft = {
 
 @Injectable()
 export class PhotoImportService {
+  private readonly logger = new Logger(PhotoImportService.name);
+
   /**
    * Reads one photo and returns drafts; creates nothing and stores nothing (the image only lives in this request).
    * Set PHOTO_IMPORT_STUB=1 to get a canned result without calling Gemini.
@@ -69,7 +71,7 @@ export class PhotoImportService {
     const key = process.env.GEMINI_API_KEY;
     if (!key) throw new ServiceUnavailableException('Photo import is not configured');
 
-    const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+    const model = process.env.GEMINI_MODEL ?? 'gemini-3.6-flash';
     const res = await fetch(`${GEMINI_URL}/${model}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
@@ -91,11 +93,14 @@ export class PhotoImportService {
         generationConfig: {
           responseMimeType: 'application/json',
           responseSchema: RESPONSE_SCHEMA,
-          thinkingConfig: { thinkingBudget: 0 },
+          thinkingConfig: { thinkingLevel: 'minimal' },
         },
       }),
     });
-    if (!res.ok) throw new BadGatewayException(`Photo reading failed (${res.status})`);
+    if (!res.ok) {
+      this.logger.warn(`Gemini ${model} answered ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      throw new BadGatewayException(`Photo reading failed (${res.status})`);
+    }
 
     const body = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
     const text = body.candidates?.[0]?.content?.parts?.[0]?.text;
