@@ -7,6 +7,9 @@ import { ActivityModule } from './activity/activity.module';
 import { PreferencesModule } from './preferences/preferences.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { PhotoImportModule } from './photo-import/photo-import.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { AgentsModule } from './agents/agents.module';
+import { OAuthModule } from './oauth/oauth.module';
 
 @Module({
   imports: [
@@ -18,6 +21,9 @@ import { PhotoImportModule } from './photo-import/photo-import.module';
     ActivityModule,
     FeedbackModule,
     PhotoImportModule,
+    NotificationsModule,
+    AgentsModule,
+    OAuthModule,
   ],
 })
 export class AppModule {}

@@ -71,6 +71,8 @@ interface RecurringTaskLike {
   recurrenceUnit?: RecurrenceUnit | null;
   dueDate: Date | null;
   recurrenceEndDate: Date | null;
+  extraTodayDates?: Date[];
+  completedDates?: Date[];
 }
 
 /** `day` is a UTC-midnight date. */
@@ -81,6 +83,19 @@ export function occursOn(task: RecurringTaskLike, day: Date): boolean {
   if (d < start) return false;
   if (task.recurrenceEndDate && d > startOfUTCDay(task.recurrenceEndDate)) return false;
   return matchesRule(d, start, task);
+}
+
+/** Does the series show up on `day`: by its cadence, or forced onto that day by a Triage "add to today". */
+export function hasOccurrenceOn(task: RecurringTaskLike, day: Date): boolean {
+  if (occursOn(task, day)) return true;
+  const target = startOfUTCDay(day).getTime();
+  return (task.extraTodayDates ?? []).some((d) => startOfUTCDay(d).getTime() === target);
+}
+
+/** Has that day's occurrence been ticked off? */
+export function isOccurrenceDone(task: RecurringTaskLike, day: Date): boolean {
+  const target = startOfUTCDay(day).getTime();
+  return (task.completedDates ?? []).some((d) => startOfUTCDay(d).getTime() === target);
 }
 
 /** Longest gap between occurrences of this series, plus slack — bounds the backward scan. */

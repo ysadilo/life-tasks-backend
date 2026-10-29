@@ -1,6 +1,9 @@
 import { ActivityType, Task, TaskStatus } from '@prisma/client';
-import { ActivityService, eventsForUpdate } from './activity.service';
+import { ActivityService, eventsForUpdate, pushBody } from './activity.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+const notifications = { notifyBoard: jest.fn() } as unknown as NotificationsService;
 
 const task = (over: Partial<Task>) =>
   ({ id: 't', title: 'Pay bill', status: TaskStatus.today, assigneeId: null, ...over }) as Task;
@@ -33,7 +36,7 @@ describe('ActivityService.recordAdded', () => {
       board: { findUnique: jest.fn().mockResolvedValue({ shared }) },
       activity: { createMany },
     } as unknown as PrismaService;
-    return { createMany, service: new ActivityService(prisma) };
+    return { createMany, service: new ActivityService(prisma, notifications) };
   };
 
   it('logs on a shared board', async () => {
@@ -57,6 +60,6 @@ describe('ActivityService failures', () => {
       board: { findUnique: jest.fn().mockResolvedValue({ shared: true }) },
       activity: { createMany: jest.fn().mockRejectedValue(new Error('relation "Activity" does not exist')) },
     } as unknown as PrismaService;
-    await expect(new ActivityService(prisma).recordAdded('b1', 'u1', task({}))).resolves.toBeUndefined();
+    await expect(new ActivityService(prisma, notifications).recordAdded('b1', 'u1', task({}))).resolves.toBeUndefined();
   });
 });
