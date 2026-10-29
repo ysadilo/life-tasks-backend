@@ -6,6 +6,7 @@ import { LifeAreasModule } from './life-areas/life-areas.module';
 import { ActivityModule } from './activity/activity.module';
 import { PreferencesModule } from './preferences/preferences.module';
 import { FeedbackModule } from './feedback/feedback.module';
+import { PhotoImportModule } from './photo-import/photo-import.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AgentsModule } from './agents/agents.module';
 import { OAuthModule } from './oauth/oauth.module';
@@ -19,6 +20,7 @@ import { OAuthModule } from './oauth/oauth.module';
     PreferencesModule,
     ActivityModule,
     FeedbackModule,
+    PhotoImportModule,
     NotificationsModule,
     AgentsModule,
     OAuthModule,

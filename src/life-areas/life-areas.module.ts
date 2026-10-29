@@ -7,5 +7,6 @@ import { BoardsModule } from '../boards/boards.module';
   imports: [BoardsModule],
   controllers: [LifeAreasController],
   providers: [LifeAreasService],
+  exports: [LifeAreasService],
 })
 export class LifeAreasModule {}
