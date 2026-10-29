@@ -2,6 +2,13 @@ import { BadGatewayException, Injectable, Logger, ServiceUnavailableException } 
 import { PhotoDraft, toDrafts } from './photo-import.mapper';
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+/** `code` of the 502 body when the AI provider failed (as opposed to our own errors), so the client can say so. */
+export const AI_UNAVAILABLE = 'ai_unavailable';
+const aiUnavailable = (message: string) =>
+  new BadGatewayException({ statusCode: 502, error: 'Bad Gateway', code: AI_UNAVAILABLE, message });
+const RETRYABLE = new Set([429, 500, 503, 504]);
+const RETRY_DELAY_MS = 800;
+const TIMEOUT_MS = 15_000;
 
 const PROMPT = (
   areas: string[],
@@ -71,11 +78,12 @@ export class PhotoImportService {
     const key = process.env.GEMINI_API_KEY;
     if (!key) throw new ServiceUnavailableException('Photo import is not configured');
 
-    const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
-    const res = await fetch(`${GEMINI_URL}/${model}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
+    const primary = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+    const fallback = process.env.GEMINI_FALLBACK_MODEL || 'gemini-3.5-flash-lite';
+    const res = await this.generate(
+      [primary, primary, fallback],
+      key,
+      JSON.stringify({
         contents: [
           {
             parts: [
@@ -95,19 +103,42 @@ export class PhotoImportService {
           responseSchema: RESPONSE_SCHEMA,
           thinkingConfig: { thinkingLevel: 'minimal' },
         },
-      }),
-    });
-    if (!res.ok) {
-      this.logger.warn(`Gemini ${model} answered ${res.status}: ${(await res.text()).slice(0, 300)}`);
-      throw new BadGatewayException(`Photo reading failed (${res.status})`);
-    }
+      })
+    );
 
     const body = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
     const text = body.candidates?.[0]?.content?.parts?.[0]?.text;
     try {
       return toDrafts(text ? JSON.parse(text) : null, areas);
     } catch {
-      throw new BadGatewayException('Photo reading returned unreadable output');
+      throw aiUnavailable('Photo reading returned unreadable output');
     }
+  }
+
+  /**
+   * Gemini's free tier is often "high demand" (503) or rate limited (429): try each model in turn
+   * (the same one twice, then a lighter one) and give up at the first error a retry can't fix.
+   */
+  private async generate(models: string[], key: string, body: string): Promise<Response> {
+    let last: number | string = 'no response';
+    for (const [i, model] of models.entries()) {
+      if (i > 0 && model === models[i - 1]) await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      try {
+        const res = await fetch(`${GEMINI_URL}/${model}:generateContent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+          body,
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        if (res.ok) return res;
+        last = res.status;
+        this.logger.warn(`Gemini ${model} answered ${res.status}: ${(await res.text().catch(() => '')).slice(0, 300)}`);
+        if (!RETRYABLE.has(res.status)) break;
+      } catch (error) {
+        last = 'no response';
+        this.logger.warn(`Gemini ${model} failed: ${(error as Error).message}`);
+      }
+    }
+    throw aiUnavailable(`Photo reading failed (${last})`);
   }
 }
