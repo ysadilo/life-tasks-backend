@@ -43,7 +43,16 @@ describe('ActivityService.recordAdded', () => {
     const { createMany, service: s } = service(true);
     await s.recordAdded('b1', 'u1', task({ title: 'Book boiler' }));
     expect(createMany).toHaveBeenCalledWith({
-      data: [{ boardId: 'b1', actorId: 'u1', taskTitle: 'Book boiler', type: 'added', targetUserId: null }],
+      data: [
+        {
+          boardId: 'b1',
+          actorId: 'u1',
+          taskTitle: 'Book boiler',
+          taskId: task({}).id,
+          type: 'added',
+          targetUserId: null,
+        },
+      ],
     });
   });
 

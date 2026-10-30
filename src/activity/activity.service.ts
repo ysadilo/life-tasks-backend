@@ -66,6 +66,7 @@ export class ActivityService {
       id: row.id,
       type: row.type,
       taskTitle: row.taskTitle,
+      taskId: row.taskId,
       actorId: row.actorId,
       actorEmail: row.actor.email,
       targetUserId: row.targetUserId,
@@ -75,15 +76,15 @@ export class ActivityService {
   }
 
   async recordAdded(boardId: string, actorId: string, task: Task) {
-    await this.record(boardId, actorId, task.title, [{ type: ActivityType.added }]);
+    await this.record(boardId, actorId, task, [{ type: ActivityType.added }]);
   }
 
   async recordUpdate(boardId: string, actorId: string, before: Task, after: Task, dto: UpdateTaskDto) {
-    await this.record(boardId, actorId, after.title, eventsForUpdate(before, after, dto));
+    await this.record(boardId, actorId, after, eventsForUpdate(before, after, dto));
   }
 
   /** Only shared boards keep a feed — a personal board's "activity" would just be you. */
-  private async record(boardId: string, actorId: string, taskTitle: string, events: ActivityEvent[]) {
+  private async record(boardId: string, actorId: string, task: Task, events: ActivityEvent[]) {
     if (events.length === 0) return;
     // Best effort: the task change is already saved, so a feed failure must not turn it into an error.
     try {
@@ -96,12 +97,13 @@ export class ActivityService {
         data: events.map((event) => ({
           boardId,
           actorId,
-          taskTitle,
+          taskTitle: task.title,
+          taskId: task.id,
           type: event.type,
           targetUserId: event.targetUserId ?? null,
         })),
       });
-      await this.push(boardId, board.name, actorId, taskTitle, events);
+      await this.push(boardId, board.name, actorId, task, events);
     } catch (error) {
       this.logger.error(
         `Could not record activity on board ${boardId}`,
@@ -110,16 +112,16 @@ export class ActivityService {
     }
   }
 
-  private async push(boardId: string, boardName: string, actorId: string, task: string, events: ActivityEvent[]) {
+  private async push(boardId: string, boardName: string, actorId: string, task: Task, events: ActivityEvent[]) {
     const ids = [actorId, ...events.map((e) => e.targetUserId).filter((id): id is string => !!id)];
     const users = await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, email: true } });
     const name = (id: string | null | undefined) => localPart(users.find((u) => u.id === id)?.email);
     for (const event of events) {
       await this.notifications.notifyBoard(boardId, actorId, (recipientId): PushPayload => ({
         title: boardName,
-        body: pushBody(event, name(actorId), task, name(event.targetUserId), recipientId),
-        tag: `${boardId}:${event.type}:${task}`,
-        url: '/today',
+        body: pushBody(event, name(actorId), task.title, name(event.targetUserId), recipientId),
+        tag: `${boardId}:${event.type}:${task.title}`,
+        url: `/today?task=${task.id}`,
       }));
     }
   }
