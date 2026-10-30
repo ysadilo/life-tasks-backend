@@ -48,6 +48,9 @@ export class UpdateTaskDto {
   // the fields above — this is not a normal edit).
   occurrenceDate?: string;
   occurrenceDone?: boolean;
+  /** Optional check-in for the ticked occurrence (Reflect on a recurring task). */
+  occurrenceFeeling?: Feeling | null;
+  occurrenceMinutes?: number | null;
 
   // Resolve a recurring task's flagged missed occurrence (also mutually exclusive
   // with the fields above).
