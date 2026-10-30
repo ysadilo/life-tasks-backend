@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { BoardsService } from './boards.service';
 import { CreateBoardDto, InviteDto, RenameBoardDto } from './board.dto';
+import { ImageKeyDto } from '../images/image.dto';
 import { Auth0AuthGuard } from '../auth/auth0-auth.guard';
 import { AccessToken, CurrentUser } from '../auth/current-user.decorator';
 
@@ -69,6 +70,22 @@ export class BoardsController {
   @Patch(':id')
   rename(@CurrentUser() userId: string, @Param('id') id: string, @Body() dto: RenameBoardDto) {
     return this.boards.rename(id, userId, dto.name);
+  }
+
+  @Post(':id/cover/upload-url')
+  coverUploadUrl(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.boards.coverUploadUrl(id, userId);
+  }
+
+  @Put(':id/cover')
+  setCover(@CurrentUser() userId: string, @Param('id') id: string, @Body() dto: ImageKeyDto) {
+    return this.boards.setCover(id, userId, dto.key);
+  }
+
+  @Delete(':id/cover')
+  @HttpCode(204)
+  async clearCover(@CurrentUser() userId: string, @Param('id') id: string) {
+    await this.boards.setCover(id, userId, null);
   }
 
   @Delete(':id')

@@ -21,6 +21,8 @@ export class CreateTaskDto {
   recurrenceInterval?: number;
   recurrenceUnit?: RecurrenceUnit;
   recurrenceEndDate?: string;
+  /** Set by the MCP tools: the AI agent that added the task. */
+  createdVia?: string;
 }
 
 export class UpdateTaskDto {

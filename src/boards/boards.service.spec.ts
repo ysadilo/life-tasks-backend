@@ -1,5 +1,10 @@
 import { BoardsService } from './boards.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { ImagesService } from '../images/images.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+const boardsService = (prisma: PrismaService) =>
+  new BoardsService(prisma, { notifyInvited: jest.fn() } as unknown as NotificationsService, new ImagesService());
 
 describe('BoardsService.resolveBoardId', () => {
   it('seeds the default life areas when bootstrapping a new board', async () => {
@@ -13,7 +18,7 @@ describe('BoardsService.resolveBoardId', () => {
     } as unknown as PrismaService;
 
     // fetchEmail falls back to a local address when the userinfo call fails.
-    await new BoardsService(prisma).resolveBoardId('u1', 'token');
+    await boardsService(prisma).resolveBoardId('u1', 'token');
 
     expect(prisma.lifeArea.createMany).toHaveBeenCalledWith({
       data: [
@@ -32,7 +37,7 @@ describe('BoardsService.resolveBoardId', () => {
       lifeArea: { createMany: jest.fn() },
     } as unknown as PrismaService;
 
-    await new BoardsService(prisma).resolveBoardId('u1', 'token');
+    await boardsService(prisma).resolveBoardId('u1', 'token');
 
     expect(prisma.lifeArea.createMany).not.toHaveBeenCalled();
   });
@@ -40,7 +45,7 @@ describe('BoardsService.resolveBoardId', () => {
 
 describe('BoardsService board access', () => {
   const withMember = (member: unknown) =>
-    new BoardsService({ boardMember: { findUnique: jest.fn().mockResolvedValue(member) } } as unknown as PrismaService);
+    boardsService({ boardMember: { findUnique: jest.fn().mockResolvedValue(member) } } as unknown as PrismaService);
 
   it('acts on the requested board when the user is a member', async () => {
     await expect(withMember({ role: 'member' }).resolveBoardId('u1', 'token', 'b2')).resolves.toBe('b2');
@@ -54,7 +59,7 @@ describe('BoardsService board access', () => {
     const prisma = {
       board: { findUnique: jest.fn().mockResolvedValue({ id: 'b1', ownerId: 'someone-else', shared: true }) },
     } as unknown as PrismaService;
-    await expect(new BoardsService(prisma).invite('b1', 'u1', 'a@b.co')).rejects.toThrow('Only the owner');
+    await expect(boardsService(prisma).invite('b1', 'u1', 'a@b.co')).rejects.toThrow('Only the owner');
   });
 
   it('stores invites lower-cased', async () => {
@@ -64,7 +69,7 @@ describe('BoardsService board access', () => {
       boardMember: { findFirst: jest.fn().mockResolvedValue(null) },
       boardInvite: { upsert },
     } as unknown as PrismaService;
-    await new BoardsService(prisma).invite('b1', 'u1', ' Anna@Mail.com ');
+    await boardsService(prisma).invite('b1', 'u1', ' Anna@Mail.com ');
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({ create: { boardId: 'b1', email: 'anna@mail.com', invitedBy: 'u1' } })
     );
@@ -79,7 +84,7 @@ describe('BoardsService bootstrap race', () => {
       user: { upsert: jest.fn().mockResolvedValue({}) },
       lifeArea: { createMany: jest.fn().mockResolvedValue({}) },
     } as unknown as PrismaService;
-    const service = new BoardsService(prisma);
+    const service = boardsService(prisma);
 
     await Promise.all([1, 2, 3, 4].map(() => service.resolveBoardId('u1', 'token')));
 
@@ -92,7 +97,7 @@ describe('BoardsService management', () => {
 
   it('only the owner can rename', async () => {
     const prisma = { board: { findUnique: jest.fn().mockResolvedValue(board) } } as unknown as PrismaService;
-    await expect(new BoardsService(prisma).rename('b1', 'someone', 'New')).rejects.toThrow('Only the owner');
+    await expect(boardsService(prisma).rename('b1', 'someone', 'New')).rejects.toThrow('Only the owner');
   });
 
   it('refuses to delete the last owned board', async () => {
@@ -103,13 +108,13 @@ describe('BoardsService management', () => {
         delete: jest.fn(),
       },
     } as unknown as PrismaService;
-    await expect(new BoardsService(prisma).remove('b1', 'owner')).rejects.toThrow('at least one');
+    await expect(boardsService(prisma).remove('b1', 'owner')).rejects.toThrow('at least one');
     expect(prisma.board.delete).not.toHaveBeenCalled();
   });
 
   it('the owner cannot leave', async () => {
     const prisma = { board: { findUnique: jest.fn().mockResolvedValue(board) } } as unknown as PrismaService;
-    await expect(new BoardsService(prisma).leave('b1', 'owner')).rejects.toThrow('delete the board');
+    await expect(boardsService(prisma).leave('b1', 'owner')).rejects.toThrow('delete the board');
   });
 
   it("unassigns a departing member's tasks", async () => {
@@ -121,7 +126,7 @@ describe('BoardsService management', () => {
       task: { updateMany },
       $transaction: jest.fn().mockResolvedValue([]),
     } as unknown as PrismaService;
-    await new BoardsService(prisma).leave('b1', 'member');
+    await boardsService(prisma).leave('b1', 'member');
     expect(updateMany).toHaveBeenCalledWith({
       where: { boardId: 'b1', assigneeId: 'member' },
       data: { assigneeId: null },
@@ -150,7 +155,7 @@ describe('BoardsService.findForUser counts', () => {
       task: { groupBy },
     } as unknown as PrismaService;
 
-    const boards = await new BoardsService(prisma).findForUser('u1', new Date('2026-10-23'));
+    const boards = await boardsService(prisma).findForUser('u1', new Date('2026-10-23'));
 
     expect(boards.map((b) => b.counts)).toEqual([
       { today: 6, backlog: 3, forYou: 2 },
@@ -162,7 +167,7 @@ describe('BoardsService.findForUser counts', () => {
 describe('BoardsService join link', () => {
   it('only the owner can create the link, and only for shared boards', async () => {
     const find = (board: object) =>
-      new BoardsService({ board: { findUnique: jest.fn().mockResolvedValue(board) } } as unknown as PrismaService);
+      boardsService({ board: { findUnique: jest.fn().mockResolvedValue(board) } } as unknown as PrismaService);
     await expect(find({ id: 'b1', ownerId: 'x', shared: true }).ensureInviteCode('b1', 'u1')).rejects.toThrow(
       'Only the owner'
     );
@@ -180,15 +185,15 @@ describe('BoardsService join link', () => {
           update,
         },
       }) as unknown as PrismaService;
-    await expect(new BoardsService(prisma('abc')).ensureInviteCode('b1', 'u1')).resolves.toEqual({ code: 'abc' });
+    await expect(boardsService(prisma('abc')).ensureInviteCode('b1', 'u1')).resolves.toEqual({ code: 'abc' });
     expect(update).not.toHaveBeenCalled();
-    const minted = await new BoardsService(prisma(null)).ensureInviteCode('b1', 'u1');
+    const minted = await boardsService(prisma(null)).ensureInviteCode('b1', 'u1');
     expect(minted.code).toMatch(/^[\w-]{20,}$/);
   });
 
   it('rejects an unknown code', async () => {
     const prisma = { board: { findUnique: jest.fn().mockResolvedValue(null) } } as unknown as PrismaService;
-    await expect(new BoardsService(prisma).previewJoin('nope')).rejects.toThrow('not valid');
+    await expect(boardsService(prisma).previewJoin('nope')).rejects.toThrow('not valid');
   });
 
   it('joins as a member and uses up a matching email invite', async () => {
@@ -205,7 +210,7 @@ describe('BoardsService join link', () => {
       boardInvite: { deleteMany },
       $transaction: jest.fn().mockResolvedValue([]),
     } as unknown as PrismaService;
-    await expect(new BoardsService(prisma).joinByCode('abc', 'u1')).resolves.toEqual({ boardId: 'b1' });
+    await expect(boardsService(prisma).joinByCode('abc', 'u1')).resolves.toEqual({ boardId: 'b1' });
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({ create: { boardId: 'b1', userId: 'u1', role: 'member' } })
     );
