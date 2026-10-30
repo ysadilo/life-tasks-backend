@@ -22,6 +22,8 @@ describe('ImagesService', () => {
     expect(key.endsWith('.webp')).toBe(true);
     expect(uploadUrl).toContain('acc.r2.cloudflarestorage.com');
     expect(uploadUrl).toContain('X-Amz-Signature=');
+    // A checksum baked into the URL would be of an empty body and make R2 reject the real upload.
+    expect(uploadUrl.toLowerCase()).not.toContain('checksum');
   });
 
   it("rejects a key outside the caller's prefix before saving anything", async () => {

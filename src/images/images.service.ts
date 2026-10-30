@@ -36,6 +36,8 @@ export class ImagesService {
       region: 'auto',
       endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
       credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
+      // Without this the SDK signs the CRC32 of an empty body into the URL, and R2 then rejects the real upload with 403.
+      requestChecksumCalculation: 'WHEN_REQUIRED',
     });
     return (this.s3 = { client, bucket: R2_BUCKET });
   }
