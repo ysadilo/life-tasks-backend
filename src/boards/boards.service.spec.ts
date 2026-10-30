@@ -1,9 +1,10 @@
 import { BoardsService } from './boards.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ImagesService } from '../images/images.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const boardsService = (prisma: PrismaService) =>
-  new BoardsService(prisma, { notifyInvited: jest.fn() } as unknown as NotificationsService);
+  new BoardsService(prisma, { notifyInvited: jest.fn() } as unknown as NotificationsService, new ImagesService());
 
 describe('BoardsService.resolveBoardId', () => {
   it('seeds the default life areas when bootstrapping a new board', async () => {

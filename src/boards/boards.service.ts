@@ -3,6 +3,7 @@ import { BoardRole, TaskStatus } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ImagesService } from '../images/images.service';
 
 /** Seeded for every new board; order also picks the display colour (order % 10). */
 const DEFAULT_LIFE_AREAS = ['Home', 'Personal', 'Work', 'Health', 'Social'];
@@ -11,7 +12,8 @@ const DEFAULT_LIFE_AREAS = ['Home', 'Personal', 'Work', 'Health', 'Social'];
 export class BoardsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly notifications: NotificationsService
+    private readonly notifications: NotificationsService,
+    private readonly images: ImagesService
   ) {}
 
   /**
@@ -61,7 +63,7 @@ export class BoardsService {
         where: { members: { some: { userId } } },
         orderBy: { createdAt: 'asc' },
         include: {
-          members: { include: { user: { select: { email: true } } } },
+          members: { include: { user: { select: { email: true, avatarKey: true } } } },
           invites: { select: { id: true, email: true }, orderBy: { createdAt: 'asc' } },
         },
       })
@@ -77,6 +79,7 @@ export class BoardsService {
             members: members.map((m) => ({
               userId: m.userId,
               email: m.user.email,
+              avatarKey: m.user.avatarKey,
               role: m.role,
               isMe: m.userId === userId,
             })),
@@ -115,6 +118,19 @@ export class BoardsService {
     const name = rawName.trim();
     if (!name) throw new BadRequestException('Name is required.');
     return this.prisma.board.update({ where: { id: boardId }, data: { name } });
+  }
+
+  async coverUploadUrl(boardId: string, userId: string) {
+    await this.ownedBoard(boardId, userId);
+    return this.images.uploadUrl('cover', boardId);
+  }
+
+  /** Sets the board's cover to an uploaded image, or clears it with null. Owner only. */
+  async setCover(boardId: string, userId: string, key: string | null) {
+    const { coverKey } = await this.ownedBoard(boardId, userId);
+    return this.images.swap('cover', boardId, key, coverKey, () =>
+      this.prisma.board.update({ where: { id: boardId }, data: { coverKey: key }, select: { coverKey: true } })
+    );
   }
 
   /** Deletes the board for everyone (tasks, life areas, members and invites cascade). Users keep at least one board. */

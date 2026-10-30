@@ -101,6 +101,8 @@ enum RecurrenceUnit {
 model User {
   id        String   @id
   email     String   @unique
+  // Object key of the avatar in the image bucket (see ImagesService); null = show initials.
+  avatarKey String?
   createdAt DateTime @default(now())
 
   ownedBoards       Board[]            @relation("BoardOwner")
@@ -137,6 +139,8 @@ model Board {
   shared     Boolean @default(false)
   // Anyone signed in who has this code can join as a member; null = link disabled.
   inviteCode String? @unique
+  // Object key of the cover picture in the image bucket (see ImagesService); null = default look.
+  coverKey   String?
 
   members   BoardMember[]
   invites   BoardInvite[]
