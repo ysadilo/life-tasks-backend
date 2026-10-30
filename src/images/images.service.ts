@@ -6,11 +6,11 @@ import { createHash, randomUUID } from 'crypto';
 export type ImageKind = 'avatar' | 'cover';
 
 const FOLDER: Record<ImageKind, string> = { avatar: 'u', cover: 'b' };
-/** The client re-encodes everything to WebP at a small size before uploading, so this is generous. */
+/** The client re-encodes everything to JPEG (the one format every phone's canvas can encode) at a small size before uploading, so this is generous. */
 export const MAX_IMAGE_BYTES = 512 * 1024;
-const CONTENT_TYPE = 'image/webp';
+const CONTENT_TYPE = 'image/jpeg';
 const UPLOAD_TTL_SECONDS = 300;
-const KEY_NAME = /^[0-9a-f-]{36}\.webp$/;
+const KEY_NAME = /^[0-9a-f-]{36}\.jpg$/;
 
 /** Every key of one owner lives under this prefix, which is how a key is proven to be theirs. */
 export function imagePrefix(kind: ImageKind, ownerId: string) {
@@ -36,21 +36,23 @@ export class ImagesService {
       region: 'auto',
       endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
       credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
+      // Without this the SDK signs the CRC32 of an empty body into the URL, and R2 then rejects the real upload with 403.
+      requestChecksumCalculation: 'WHEN_REQUIRED',
     });
     return (this.s3 = { client, bucket: R2_BUCKET });
   }
 
-  /** A short-lived URL the browser PUTs the WebP to (with `Content-Type: image/webp`), plus the key to confirm it with. */
+  /** A short-lived URL the browser PUTs the JPEG to (with `Content-Type: image/jpeg`), plus the key to confirm it with. */
   async uploadUrl(kind: ImageKind, ownerId: string) {
     const { client, bucket } = this.storage();
-    const key = `${imagePrefix(kind, ownerId)}${randomUUID()}.webp`;
+    const key = `${imagePrefix(kind, ownerId)}${randomUUID()}.jpg`;
     const command = new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: CONTENT_TYPE });
     const uploadUrl = await getSignedUrl(client, command, { expiresIn: UPLOAD_TTL_SECONDS });
     return { uploadUrl, key };
   }
 
   /**
-   * Checks the uploaded object is this owner's, WebP and small enough (an oversized or wrong-type upload is deleted),
+   * Checks the uploaded object is this owner's, JPEG and small enough (an oversized or wrong-type upload is deleted),
    * runs `save` to store the new key (null clears it), then deletes the previous object.
    */
   async swap<T>(
@@ -76,7 +78,7 @@ export class ImagesService {
     if (!head) throw new BadRequestException('The image was not uploaded.');
     if (head.ContentType !== CONTENT_TYPE || (head.ContentLength ?? 0) > MAX_IMAGE_BYTES) {
       await this.remove(key);
-      throw new BadRequestException(`Images must be WebP and at most ${MAX_IMAGE_BYTES / 1024} KB.`);
+      throw new BadRequestException(`Images must be JPEG and at most ${MAX_IMAGE_BYTES / 1024} KB.`);
     }
   }
 
