@@ -175,17 +175,24 @@ export class TasksService {
 
   async update(id: string, dto: UpdateTaskDto, boardId?: string, today = new Date()) {
     const current = await this.findOne(id, boardId);
+    if (
+      current.status === TaskStatus.done &&
+      dto.assigneeId !== undefined &&
+      dto.assigneeId !== current.assigneeId
+    ) {
+      throw new BadRequestException('A done task cannot be reassigned.');
+    }
     await this.assertAssignable(current.boardId, dto.assigneeId);
 
     if (dto.occurrenceDate !== undefined) {
-      return this.toggleOccurrence(current.id, dto.occurrenceDate, dto.occurrenceDone ?? true);
+      return this.toggleOccurrence(current.id, dto.occurrenceDate, dto.occurrenceDone ?? true, dto);
     }
 
     if (dto.resolveMissedAction !== undefined) {
       return this.resolveMissed(current, dto.resolveMissedAction);
     }
 
-    const { occurrenceDone: _od, occurrenceDate: _oda, ...rest } = dto;
+    const { occurrenceDone: _od, occurrenceDate: _oda, occurrenceFeeling: _of, occurrenceMinutes: _om, ...rest } = dto;
     let data: Prisma.TaskUncheckedUpdateInput = { ...rest };
 
     const recurrence = 'recurrence' in data ? data.recurrence : current.recurrence;
@@ -243,14 +250,39 @@ export class TasksService {
     return this.prisma.task.update({ where: { id: task.id }, data });
   }
 
-  private async toggleOccurrence(id: string, isoDate: string, done: boolean) {
+  private async toggleOccurrence(
+    id: string,
+    isoDate: string,
+    done: boolean,
+    checkin: Pick<UpdateTaskDto, 'occurrenceFeeling' | 'occurrenceMinutes'> = {}
+  ) {
     const day = startOfUTCDay(new Date(isoDate));
     const task = await this.prisma.task.findUnique({ where: { id } });
     const others = (task?.completedDates ?? []).filter((d) => startOfUTCDay(d).getTime() !== day.getTime());
     return this.prisma.task.update({
       where: { id },
-      data: { completedDates: done ? [...others, day] : others },
+      data: {
+        completedDates: done ? [...others, day] : others,
+        occurrenceCheckins: this.nextCheckins(task?.occurrenceCheckins, day, done, checkin),
+      },
     });
+  }
+
+  /** Un-ticking discards the day's check-in; omitted fields keep their saved value, null clears them. */
+  private nextCheckins(
+    saved: Prisma.JsonValue | undefined,
+    day: Date,
+    done: boolean,
+    { occurrenceFeeling, occurrenceMinutes }: Pick<UpdateTaskDto, 'occurrenceFeeling' | 'occurrenceMinutes'>
+  ): Prisma.InputJsonObject {
+    const { [day.toISOString().slice(0, 10)]: prev, ...rest } = (saved ?? {}) as Record<string, Record<string, unknown>>;
+    if (!done) return rest as Prisma.InputJsonObject;
+    const next = {
+      feeling: occurrenceFeeling === undefined ? prev?.feeling : occurrenceFeeling,
+      actualMinutes: occurrenceMinutes === undefined ? prev?.actualMinutes : occurrenceMinutes,
+    };
+    const filled = Object.fromEntries(Object.entries(next).filter(([, v]) => v != null));
+    return (Object.keys(filled).length ? { ...rest, [day.toISOString().slice(0, 10)]: filled } : rest) as Prisma.InputJsonObject;
   }
 
   async remove(id: string, boardId?: string) {

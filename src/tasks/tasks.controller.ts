@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { TaskStatus } from '@prisma/client';
 import { TasksService } from './tasks.service';
 import { BoardsService } from '../boards/boards.service';
@@ -74,6 +74,16 @@ export class TasksController {
   ) {
     const boardId = await this.boards.resolveBoardId(userId, token, requestedBoard);
     const before = await this.tasks.findOne(id, boardId);
+    // Completing, reopening or reflecting on a task is the assignee's call (unassigned tasks are open to all).
+    const touchesCompletion =
+      dto.status === TaskStatus.done ||
+      (before.status === TaskStatus.done &&
+        (dto.status !== undefined || dto.feeling !== undefined || dto.actualMinutes !== undefined));
+    if (touchesCompletion && before.assigneeId && before.assigneeId !== userId) {
+      throw new ForbiddenException('Only the assignee can do this.');
+    }
+    // Whoever completes an unassigned task takes it.
+    if (dto.status === TaskStatus.done && !before.assigneeId && dto.assigneeId === undefined) dto.assigneeId = userId;
     const after = await this.tasks.update(id, dto, boardId, today ? new Date(today) : undefined);
     await this.activity.recordUpdate(boardId, userId, before, after, dto);
     return after;

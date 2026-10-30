@@ -261,6 +261,8 @@ model Task {
   completedVia     String?
   feeling          Feeling?
   actualMinutes    Int?
+  // Per-occurrence check-ins of a recurring series: { 'YYYY-MM-DD': { feeling?, actualMinutes? } }.
+  occurrenceCheckins Json           @default("{}")
 
   // A recurring task is a single "series" row. Occurrences are virtual — derived
   // from the rule between dueDate (the first occurrence) and recurrenceEndDate —
