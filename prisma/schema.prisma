@@ -211,6 +211,8 @@ model Activity {
   actor        User         @relation("ActivityActor", fields: [actorId], references: [id], onDelete: Cascade)
   type         ActivityType
   taskTitle    String
+  // Plain id, no relation: the entry outlives its task and the link just finds nothing.
+  taskId       String?
   targetUserId String?
   target       User?        @relation("ActivityTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
   createdAt    DateTime     @default(now())
