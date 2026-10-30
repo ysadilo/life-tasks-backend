@@ -10,6 +10,7 @@ import { PhotoImportModule } from './photo-import/photo-import.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AgentsModule } from './agents/agents.module';
 import { OAuthModule } from './oauth/oauth.module';
+import { AvatarModule } from './avatar/avatar.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { OAuthModule } from './oauth/oauth.module';
     NotificationsModule,
     AgentsModule,
     OAuthModule,
+    AvatarModule,
   ],
 })
 export class AppModule {}
