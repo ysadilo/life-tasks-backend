@@ -11,6 +11,10 @@ services:
       POSTGRES_DB: life_tasks
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U life_tasks -d life_tasks']
+      interval: 5s
+      retries: 10
     networks: [life-tasks]
 
   backend:
@@ -39,7 +43,9 @@ services:
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
       R2_BUCKET: ${R2_BUCKET:-}
-    depends_on: [postgres]
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks: [life-tasks]
 
 volumes:
