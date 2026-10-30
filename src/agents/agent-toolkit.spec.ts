@@ -24,6 +24,9 @@ async function connect(conn: AgentConnection) {
       board: { findMany: jest.fn().mockResolvedValue([{ id: 'b1', name: 'Yana', shared: false }]) },
       lifeArea: { findMany: jest.fn().mockResolvedValue([{ id: 'a1', boardId: 'b1', name: 'Social' }]) },
       task: { update: jest.fn() },
+      boardMember: {
+        findMany: jest.fn().mockResolvedValue([{ userId: 'u2', user: { email: 'Ann@x.com' } }]),
+      },
     },
     tasks: {
       create: jest.fn().mockResolvedValue(task),
@@ -66,6 +69,19 @@ describe('AgentToolkit', () => {
     expect(deps.agents.record).toHaveBeenCalledWith('c1', [
       expect.objectContaining({ kind: 'added', detail: 'to Backlog · P2 · Social' }),
     ]);
+  });
+
+  it('assigns a board member by email and rejects a stranger', async () => {
+    const { deps, call } = await connect(connection({ permissions: ['read', 'add', 'edit'] }));
+    deps.tasks.update.mockResolvedValue({ id: 't1', boardId: 'b1', title: 'x' });
+
+    await call('create_task', { title: 'Pack', assignee: 'ann@x.com' });
+    expect(deps.tasks.create).toHaveBeenCalledWith('b1', expect.objectContaining({ assigneeId: 'u2' }));
+
+    await call('update_task', { id: 't1', assignee: null });
+    expect(deps.tasks.update).toHaveBeenCalledWith('t1', expect.objectContaining({ assigneeId: null }), 'b1');
+
+    expect((await call('update_task', { id: 't1', assignee: 'bob@x.com' })).isError).toBe(true);
   });
 
   it('refuses a tool whose permission is off, without touching anything', async () => {

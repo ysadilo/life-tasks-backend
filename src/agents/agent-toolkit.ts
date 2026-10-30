@@ -14,6 +14,7 @@ const energy = z.enum(['low', 'medium', 'high']);
 const date = day
   .optional()
   .describe("The user's current date (YYYY-MM-DD). Defaults to today in UTC; pass it if you know it.");
+const assignee = z.string().describe('Board member email or user id (see list_boards).');
 const board = z.string().optional().describe('Board id or name. Defaults to the first board enabled for you.');
 
 const DAY_MS = 24 * 3600_000;
@@ -86,6 +87,19 @@ export class AgentToolkit {
     const found = areas.find((a) => a.name.toLowerCase() === name.toLowerCase());
     if (!found) throw new Error(`Unknown area "${name}". Areas on this board: ${areas.map((a) => a.name).join(', ')}.`);
     return found.id;
+  }
+
+  /** A board member by email or user id; assignment is limited to the board's members. */
+  private async resolveAssignee(boardId: string, ref: string) {
+    const members = await this.deps.prisma.boardMember.findMany({
+      where: { boardId },
+      select: { userId: true, user: { select: { email: true } } },
+    });
+    const found = members.find((m) => m.userId === ref || m.user.email.toLowerCase() === ref.toLowerCase());
+    if (!found) {
+      throw new Error(`Unknown assignee "${ref}". Members: ${members.map((m) => m.user.email).join(', ')}.`);
+    }
+    return found.userId;
   }
 
   private async areaNames(boardIds: string[]) {
@@ -182,7 +196,7 @@ export class AgentToolkit {
 
     server.registerTool(
       'list_boards',
-      { description: 'Boards this agent may use, with their life areas.' },
+      { description: 'Boards this agent may use, with their life areas and members (who tasks can be assigned to).' },
       async () => {
         this.need('read');
         const boards = await this.boards();
@@ -190,8 +204,16 @@ export class AgentToolkit {
           where: { boardId: { in: boards.map((b) => b.id) } },
           orderBy: { order: 'asc' },
         });
+        const members = await this.deps.prisma.boardMember.findMany({
+          where: { boardId: { in: boards.map((b) => b.id) } },
+          select: { boardId: true, userId: true, user: { select: { email: true } } },
+        });
         return this.reply(
-          boards.map((b) => ({ ...b, areas: areas.filter((a) => a.boardId === b.id).map((a) => a.name) }))
+          boards.map((b) => ({
+            ...b,
+            areas: areas.filter((a) => a.boardId === b.id).map((a) => a.name),
+            members: members.filter((m) => m.boardId === b.id).map((m) => ({ userId: m.userId, email: m.user.email })),
+          }))
         );
       }
     );
@@ -273,18 +295,20 @@ export class AgentToolkit {
           description: z.string().max(5000).optional(),
           dueDate: day.optional(),
           area: z.string().optional().describe('Life area name, e.g. "Health".'),
+          assignee: assignee.optional(),
           priority: priority.optional(),
           energy: energy.optional(),
           estimatedMinutes: z.number().int().min(1).max(1440).optional(),
         },
       },
-      async ({ board: ref, area, dueDate, ...fields }) => {
+      async ({ board: ref, area, assignee: who, dueDate, ...fields }) => {
         this.need('add');
         const b = await this.resolveBoard(ref);
         const task = await tasks.create(b.id, {
           ...fields,
           dueDate: dueDate ? new Date(dueDate) : undefined,
           areaId: area ? await this.resolveArea(b.id, area) : undefined,
+          assigneeId: who ? await this.resolveAssignee(b.id, who) : undefined,
           createdVia: this.connection.name,
         });
         await activity.recordAdded(b.id, this.userId, task);
@@ -313,17 +337,19 @@ export class AgentToolkit {
           description: z.string().max(5000).nullable().optional(),
           dueDate: day.nullable().optional(),
           area: z.string().optional().describe('Life area name.'),
+          assignee: assignee.nullable().optional().describe('Board member email or id; null to unassign.'),
           priority: priority.optional(),
           energy: energy.optional(),
           estimatedMinutes: z.number().int().min(1).max(1440).optional(),
         },
       },
-      async ({ id, area, ...fields }) => {
+      async ({ id, area, assignee: who, ...fields }) => {
         this.need('edit');
         const before = await this.ownTask(id);
         const dto = {
           ...fields,
           ...(area ? { areaId: await this.resolveArea(before.boardId, area) } : {}),
+          ...(who !== undefined ? { assigneeId: who && (await this.resolveAssignee(before.boardId, who)) } : {}),
         } as UpdateTaskDto;
         const after = await tasks.update(id, dto, before.boardId);
         await this.log(
@@ -332,6 +358,7 @@ export class AgentToolkit {
             after,
             Object.keys(fields)
               .concat(area ? ['area'] : [])
+              .concat(who !== undefined ? ['assignee'] : [])
               .join(', ')
           )
         );
