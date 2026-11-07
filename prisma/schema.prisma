@@ -75,6 +75,7 @@ enum TaskSort {
 
 enum TaskGroupBy {
   area
+  date
   priority
   energy
   effort
