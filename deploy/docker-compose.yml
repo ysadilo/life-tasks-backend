@@ -46,6 +46,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Public upstream DNS: the Pi's resolver (Tailscale MagicDNS) isn't reachable from containers,
+    # which broke Auth0 JWKS lookups. Container names (postgres) still resolve via Docker's DNS.
+    dns: [1.1.1.1, 9.9.9.9]
     networks: [life-tasks]
 
 volumes:
