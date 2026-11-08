@@ -3,6 +3,8 @@ export class CreateBoardDto {
   shared?: boolean;
   /** Emails to invite; ignored for a personal board. */
   invites?: string[];
+  /** Life area names in the creator's language; omitted/empty seeds the defaults. */
+  lifeAreas?: string[];
 }
 
 export class InviteDto {
