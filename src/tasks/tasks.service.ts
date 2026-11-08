@@ -3,6 +3,7 @@ import { Prisma, Recurrence, RecurrenceUnit, Task, TaskStatus } from '@prisma/cl
 import { PrismaService } from '../prisma/prisma.service';
 import { ResolveMissedAction, UpdateTaskDto } from './task.dto';
 import { customRecurrenceError, occursOn, previousOccurrenceBefore } from './recurrence.util';
+import { notifyError } from './reminder.util';
 
 export interface FindTasksFilter {
   boardId: string;
@@ -139,7 +140,8 @@ export class TasksService {
     if (data.recurrence && !data.dueDate) {
       throw new BadRequestException('A recurring task needs a start date (dueDate).');
     }
-    const customError = customRecurrenceError(data.recurrence, data.recurrenceInterval, data.recurrenceUnit);
+    const customError =
+      customRecurrenceError(data.recurrence, data.recurrenceInterval, data.recurrenceUnit) ?? notifyError(data);
     if (customError) throw new BadRequestException(customError);
     if (data.recurrence) {
       // A recurring series is not a board item; keep it off Today / Done.
@@ -175,11 +177,7 @@ export class TasksService {
 
   async update(id: string, dto: UpdateTaskDto, boardId?: string, today = new Date()) {
     const current = await this.findOne(id, boardId);
-    if (
-      current.status === TaskStatus.done &&
-      dto.assigneeId !== undefined &&
-      dto.assigneeId !== current.assigneeId
-    ) {
+    if (current.status === TaskStatus.done && dto.assigneeId !== undefined && dto.assigneeId !== current.assigneeId) {
       throw new BadRequestException('A done task cannot be reassigned.');
     }
     await this.assertAssignable(current.boardId, dto.assigneeId);
@@ -206,6 +204,16 @@ export class TasksService {
       ('recurrenceUnit' in data ? data.recurrenceUnit : current.recurrenceUnit) as RecurrenceUnit | null
     );
     if (customError) throw new BadRequestException(customError);
+    const reminderError = notifyError({
+      notifyDaysBefore: 'notifyDaysBefore' in dto ? dto.notifyDaysBefore : current.notifyDaysBefore,
+      notifyTime: 'notifyTime' in dto ? dto.notifyTime : current.notifyTime,
+      notifyTimeZone: 'notifyTimeZone' in dto ? dto.notifyTimeZone : current.notifyTimeZone,
+    });
+    if (reminderError) throw new BadRequestException(reminderError);
+    // A new reminder setting or due date re-arms the reminder.
+    if (['notifyDaysBefore', 'notifyTime', 'notifyTimeZone', 'dueDate'].some((k) => k in dto)) {
+      data.lastNotifiedFor = null;
+    }
     if (recurrence) {
       data = { ...data, status: TaskStatus.backlog, todayDate: null };
     } else {
@@ -275,14 +283,19 @@ export class TasksService {
     done: boolean,
     { occurrenceFeeling, occurrenceMinutes }: Pick<UpdateTaskDto, 'occurrenceFeeling' | 'occurrenceMinutes'>
   ): Prisma.InputJsonObject {
-    const { [day.toISOString().slice(0, 10)]: prev, ...rest } = (saved ?? {}) as Record<string, Record<string, unknown>>;
+    const { [day.toISOString().slice(0, 10)]: prev, ...rest } = (saved ?? {}) as Record<
+      string,
+      Record<string, unknown>
+    >;
     if (!done) return rest as Prisma.InputJsonObject;
     const next = {
       feeling: occurrenceFeeling === undefined ? prev?.feeling : occurrenceFeeling,
       actualMinutes: occurrenceMinutes === undefined ? prev?.actualMinutes : occurrenceMinutes,
     };
     const filled = Object.fromEntries(Object.entries(next).filter(([, v]) => v != null));
-    return (Object.keys(filled).length ? { ...rest, [day.toISOString().slice(0, 10)]: filled } : rest) as Prisma.InputJsonObject;
+    return (
+      Object.keys(filled).length ? { ...rest, [day.toISOString().slice(0, 10)]: filled } : rest
+    ) as Prisma.InputJsonObject;
   }
 
   async remove(id: string, boardId?: string) {

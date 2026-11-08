@@ -21,6 +21,11 @@ export class CreateTaskDto {
   recurrenceInterval?: number;
   recurrenceUnit?: RecurrenceUnit;
   recurrenceEndDate?: string;
+  /** Reminder: days before the due date (0 = on the day); null/absent = no reminder. */
+  notifyDaysBefore?: number | null;
+  /** "HH:MM" local time in `notifyTimeZone` (IANA, e.g. "Europe/Kyiv"). */
+  notifyTime?: string | null;
+  notifyTimeZone?: string | null;
   /** Set by the MCP tools: the AI agent that added the task. */
   createdVia?: string;
 }
@@ -43,6 +48,9 @@ export class UpdateTaskDto {
   recurrenceInterval?: number | null;
   recurrenceUnit?: RecurrenceUnit | null;
   recurrenceEndDate?: string | null;
+  notifyDaysBefore?: number | null;
+  notifyTime?: string | null;
+  notifyTimeZone?: string | null;
 
   // Tick / untick one occurrence day of a recurring task (mutually exclusive with
   // the fields above — this is not a normal edit).

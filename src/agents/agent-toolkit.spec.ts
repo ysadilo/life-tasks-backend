@@ -84,6 +84,30 @@ describe('AgentToolkit', () => {
     expect((await call('update_task', { id: 't1', assignee: 'bob@x.com' })).isError).toBe(true);
   });
 
+  it('sets and clears a reminder', async () => {
+    const { deps, call } = await connect(connection({ permissions: ['read', 'add', 'edit'] }));
+    deps.tasks.update.mockResolvedValue({ id: 't1', boardId: 'b1', title: 'x' });
+
+    await call('create_task', {
+      title: 'Dentist',
+      dueDate: '2026-11-10',
+      reminder: { daysBefore: 1, time: '09:00', timeZone: 'Europe/Kyiv' },
+    });
+    expect(deps.tasks.create).toHaveBeenCalledWith(
+      'b1',
+      expect.objectContaining({ notifyDaysBefore: 1, notifyTime: '09:00', notifyTimeZone: 'Europe/Kyiv' })
+    );
+
+    await call('update_task', { id: 't1', reminder: null });
+    expect(deps.tasks.update).toHaveBeenCalledWith(
+      't1',
+      expect.objectContaining({ notifyDaysBefore: null, notifyTime: null, notifyTimeZone: null }),
+      'b1'
+    );
+    const badTime = { daysBefore: 0, time: '9am', timeZone: 'UTC' };
+    expect((await call('update_task', { id: 't1', reminder: badTime })).isError).toBe(true);
+  });
+
   it('refuses a tool whose permission is off, without touching anything', async () => {
     const { deps, call } = await connect(connection());
     const result = await call('delete_task', { id: 't1' });

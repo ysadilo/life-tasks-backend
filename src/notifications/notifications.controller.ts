@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
-import { MuteDto, SubscribeDto } from './notifications.dto';
+import { MuteDto, NotificationSettingsDto, SubscribeDto } from './notifications.dto';
 import { Auth0AuthGuard } from '../auth/auth0-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
@@ -11,8 +11,14 @@ export class NotificationsController {
 
   /** The VAPID public key the browser subscribes with; null when push isn't configured. */
   @Get('config')
-  config() {
-    return this.notifications.config();
+  config(@CurrentUser() userId: string) {
+    return this.notifications.config(userId);
+  }
+
+  /** The master switch: off silences every push for this user, on every device. */
+  @Put('settings')
+  setEnabled(@CurrentUser() userId: string, @Body() dto: NotificationSettingsDto) {
+    return this.notifications.setEnabled(userId, dto.enabled);
   }
 
   @Post('subscriptions')

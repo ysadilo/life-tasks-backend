@@ -7,6 +7,7 @@ import { ActivityService } from '../activity/activity.service';
 import { AgentActionInput, AgentsService } from './agents.service';
 import type { UpdateTaskDto } from '../tasks/task.dto';
 import { hasOccurrenceOn, isOccurrenceDone } from '../tasks/recurrence.util';
+import { MAX_NOTIFY_DAYS_BEFORE } from '../tasks/reminder.util';
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
 const priority = z.enum(['P1', 'P2', 'P3', 'P4']);
@@ -16,6 +17,21 @@ const date = day
   .describe("The user's current date (YYYY-MM-DD). Defaults to today in UTC; pass it if you know it.");
 const assignee = z.string().describe('Board member email or user id (see list_boards).');
 const board = z.string().optional().describe('Board id or name. Defaults to the first board enabled for you.');
+const reminder = z
+  .object({
+    daysBefore: z.number().int().min(0).max(MAX_NOTIFY_DAYS_BEFORE).describe('0 = on the due date.'),
+    time: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM (24h)')
+      .describe("Local time in the user's zone."),
+    timeZone: z.string().describe("The user's IANA time zone, e.g. Europe/Kyiv."),
+  })
+  .describe('Push notification before the due date. Needs a dueDate.');
+/** The tool's `reminder` as task fields; null turns it off, undefined leaves it alone. */
+const reminderFields = (r: z.infer<typeof reminder> | null | undefined) =>
+  r === undefined
+    ? {}
+    : { notifyDaysBefore: r?.daysBefore ?? null, notifyTime: r?.time ?? null, notifyTimeZone: r?.timeZone ?? null };
 
 const DAY_MS = 24 * 3600_000;
 const startOfUTCDay = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -169,6 +185,10 @@ export class AgentToolkit {
       energy: task.energy,
       estimatedMinutes: task.estimatedMinutes,
       area: (task.areaId && areas.get(task.areaId)) ?? null,
+      reminder:
+        task.notifyDaysBefore == null
+          ? null
+          : { daysBefore: task.notifyDaysBefore, time: task.notifyTime, timeZone: task.notifyTimeZone },
     };
   }
 
@@ -299,14 +319,16 @@ export class AgentToolkit {
           priority: priority.optional(),
           energy: energy.optional(),
           estimatedMinutes: z.number().int().min(1).max(1440).optional(),
+          reminder: reminder.optional(),
         },
       },
-      async ({ board: ref, area, assignee: who, dueDate, ...fields }) => {
+      async ({ board: ref, area, assignee: who, dueDate, reminder: remind, ...fields }) => {
         this.need('add');
         const b = await this.resolveBoard(ref);
         const task = await tasks.create(b.id, {
           ...fields,
           dueDate: dueDate ? new Date(dueDate) : undefined,
+          ...reminderFields(remind),
           areaId: area ? await this.resolveArea(b.id, area) : undefined,
           assigneeId: who ? await this.resolveAssignee(b.id, who) : undefined,
           createdVia: this.connection.name,
@@ -341,13 +363,15 @@ export class AgentToolkit {
           priority: priority.optional(),
           energy: energy.optional(),
           estimatedMinutes: z.number().int().min(1).max(1440).optional(),
+          reminder: reminder.nullable().optional().describe('null turns the reminder off.'),
         },
       },
-      async ({ id, area, assignee: who, ...fields }) => {
+      async ({ id, area, assignee: who, reminder: remind, ...fields }) => {
         this.need('edit');
         const before = await this.ownTask(id);
         const dto = {
           ...fields,
+          ...reminderFields(remind),
           ...(area ? { areaId: await this.resolveArea(before.boardId, area) } : {}),
           ...(who !== undefined ? { assigneeId: who && (await this.resolveAssignee(before.boardId, who)) } : {}),
         } as UpdateTaskDto;
@@ -359,6 +383,7 @@ export class AgentToolkit {
             Object.keys(fields)
               .concat(area ? ['area'] : [])
               .concat(who !== undefined ? ['assignee'] : [])
+              .concat(remind !== undefined ? ['reminder'] : [])
               .join(', ')
           )
         );
