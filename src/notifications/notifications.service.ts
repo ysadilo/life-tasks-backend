@@ -30,8 +30,23 @@ export class NotificationsService {
     }
   }
 
-  config() {
-    return { publicKey: this.enabled ? this.publicKey : null };
+  /** `enabled` is the user's master switch; `publicKey` is null when push isn't configured. */
+  async config(userId: string) {
+    const row = await this.prisma.userPreference.findUnique({
+      where: { userId },
+      select: { notificationsEnabled: true },
+    });
+    return { publicKey: this.enabled ? this.publicKey : null, enabled: row?.notificationsEnabled ?? false };
+  }
+
+  async setEnabled(userId: string, enabled: boolean) {
+    if (typeof enabled !== 'boolean') throw new BadRequestException('"enabled" must be true or false.');
+    await this.prisma.userPreference.upsert({
+      where: { userId },
+      update: { notificationsEnabled: enabled },
+      create: { userId, notificationsEnabled: enabled },
+    });
+    return { enabled };
   }
 
   async subscribe(userId: string, dto: SubscribeDto) {
@@ -70,6 +85,16 @@ export class NotificationsService {
     await Promise.all(members.map((m) => this.send(m.userId, build(m.userId))));
   }
 
+  /** A task reminder goes to its assignee, or to everyone on the board when unassigned; muting the board silences it. */
+  async notifyTaskReminder(boardId: string, assigneeId: string | null, payload: PushPayload) {
+    if (!this.enabled) return;
+    const members = await this.prisma.boardMember.findMany({
+      where: { boardId, ...(assigneeId ? { userId: assigneeId } : {}), user: { boardMutes: { none: { boardId } } } },
+      select: { userId: true },
+    });
+    await Promise.all(members.map((m) => this.send(m.userId, payload)));
+  }
+
   /** Tells the invitee, if they already have an account; someone who hasn't signed in yet sees the invite on arrival. */
   async notifyInvited(email: string, boardName: string, inviterId: string) {
     if (!this.enabled) return;
@@ -90,10 +115,12 @@ export class NotificationsService {
     }
   }
 
-  /** Best effort: a push failure must never fail the request that caused it. */
+  /** Best effort: a push failure must never fail the request that caused it. Skips users whose master switch is off. */
   private async send(userId: string, payload: PushPayload) {
     try {
-      const subscriptions = await this.prisma.pushSubscription.findMany({ where: { userId } });
+      const subscriptions = await this.prisma.pushSubscription.findMany({
+        where: { userId, user: { preferences: { notificationsEnabled: true } } },
+      });
       await Promise.all(
         subscriptions.map(async ({ id, endpoint, p256dh, auth }) => {
           try {

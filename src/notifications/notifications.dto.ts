@@ -6,3 +6,7 @@ export class SubscribeDto {
 export class MuteDto {
   muted!: boolean;
 }
+
+export class NotificationSettingsDto {
+  enabled!: boolean;
+}

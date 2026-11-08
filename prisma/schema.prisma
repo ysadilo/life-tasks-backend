@@ -127,6 +127,8 @@ model UserPreference {
   backlogGroupBy TaskGroupBy @default(area)
   // Master switch for AI agents (Settings > AI agents); off blocks every connected agent.
   agentsEnabled  Boolean     @default(true)
+  // Master switch for push (Settings); off until the user turns it on. Off silences every push.
+  notificationsEnabled Boolean @default(false)
   updatedAt      DateTime    @updatedAt
 }
 
@@ -286,6 +288,14 @@ model Task {
   // dismissed, or added to today). Stops detection from re-flagging the same
   // day right after it's cleared from missedDates.
   lastResolvedMissedOccurrence DateTime?
+
+  // Reminder: push at notifyTime ("HH:MM", in notifyTimeZone) notifyDaysBefore days
+  // before the due date (each occurrence for a recurring task). Null daysBefore = off.
+  notifyDaysBefore Int?
+  notifyTime       String?
+  notifyTimeZone   String?
+  // Occurrence day last reminded about, so each one is pushed once.
+  lastNotifiedFor  DateTime?
 
   assigneeId String?
   assignee   User?   @relation("TaskAssignee", fields: [assigneeId], references: [id])
