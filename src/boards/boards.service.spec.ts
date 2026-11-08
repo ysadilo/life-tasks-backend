@@ -136,7 +136,7 @@ describe('BoardsService management', () => {
 });
 
 describe('BoardsService.findForUser counts', () => {
-  it('adds today / backlog / for-you counts per board, zero when absent', async () => {
+  it("adds today / backlog / for-you counts per board, with today's open recurring occurrences, zero when absent", async () => {
     const groupBy = jest
       .fn()
       .mockResolvedValueOnce([{ boardId: 'b1', _count: 6 }]) // today
@@ -152,14 +152,37 @@ describe('BoardsService.findForUser counts', () => {
           { id: 'b2', members: [{ userId: 'u1', role: 'owner', user: { email: 'a@b.co' } }], invites: [] },
         ]),
       },
-      task: { groupBy },
+      task: {
+        groupBy,
+        findMany: jest.fn().mockResolvedValue([
+          // Due today, mine.
+          {
+            boardId: 'b1',
+            recurrence: 'daily',
+            dueDate: new Date('2026-10-01'),
+            recurrenceEndDate: null,
+            assigneeId: 'u1',
+          },
+          // Today's occurrence already ticked off.
+          {
+            boardId: 'b1',
+            recurrence: 'daily',
+            dueDate: new Date('2026-10-01'),
+            recurrenceEndDate: null,
+            completedDates: [new Date('2026-10-23')],
+          },
+          // Not due today (Oct 23 2026 is a Friday; weekly from a Monday).
+          { boardId: 'b2', recurrence: 'weekly', dueDate: new Date('2026-10-05'), recurrenceEndDate: null },
+          { boardId: 'b2', recurrence: 'weekdays', dueDate: new Date('2026-10-01'), recurrenceEndDate: null },
+        ]),
+      },
     } as unknown as PrismaService;
 
     const boards = await boardsService(prisma).findForUser('u1', new Date('2026-10-23'));
 
     expect(boards.map((b) => b.counts)).toEqual([
-      { today: 6, backlog: 3, forYou: 2 },
-      { today: 0, backlog: 23, forYou: 0 },
+      { today: 7, backlog: 3, forYou: 3 },
+      { today: 1, backlog: 23, forYou: 0 },
     ]);
   });
 });

@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ImagesService } from '../images/images.service';
+import { hasOccurrenceOn, isOccurrenceDone } from '../tasks/recurrence.util';
 
 /** Seeded for every new board; order also picks the display colour (order % 10). */
 const DEFAULT_LIFE_AREAS = ['Home', 'Personal', 'Work', 'Health', 'Social'];
@@ -18,9 +19,9 @@ export class BoardsService {
 
   /**
    * Boards the user belongs to (owned or joined), oldest first, each with its
-   * open-work counts for the caller's local `today` (one-off tasks only —
-   * recurring occurrences are virtual): tasks on Today, in the backlog, and
-   * on Today assigned to the caller.
+   * open-work counts for the caller's local `today`: tasks on Today (one-offs
+   * plus today's undone recurring occurrences), one-offs in the backlog, and
+   * the Today ones assigned to the caller.
    */
   async findForUser(userId: string, today?: Date) {
     const boards = await this.findMemberBoards(userId);
@@ -35,7 +36,7 @@ export class BoardsService {
       ...(day ? { todayDate: { gte: day } } : {}),
     };
 
-    const [todayCounts, backlogCounts, mineCounts] = await Promise.all([
+    const [todayCounts, backlogCounts, mineCounts, recurring] = await Promise.all([
       this.prisma.task.groupBy({ by: ['boardId'], where: todayWhere, _count: true }),
       this.prisma.task.groupBy({
         by: ['boardId'],
@@ -43,16 +44,23 @@ export class BoardsService {
         _count: true,
       }),
       this.prisma.task.groupBy({ by: ['boardId'], where: { ...todayWhere, assigneeId: userId }, _count: true }),
+      this.prisma.task.findMany({
+        where: { boardId: { in: ids }, recurrence: { not: null }, status: { not: TaskStatus.done } },
+      }),
     ]);
     const countOf = (rows: { boardId: string; _count: number }[], id: string) =>
       rows.find((r) => r.boardId === id)?._count ?? 0;
+    const occurrenceDay = day ?? new Date(new Date().setUTCHours(0, 0, 0, 0));
+    const openToday = recurring.filter((t) => hasOccurrenceOn(t, occurrenceDay) && !isOccurrenceDone(t, occurrenceDay));
+    const recurringOf = (id: string, mine = false) =>
+      openToday.filter((t) => t.boardId === id && (!mine || t.assigneeId === userId)).length;
 
     return boards.map((board) => ({
       ...board,
       counts: {
-        today: countOf(todayCounts, board.id),
+        today: countOf(todayCounts, board.id) + recurringOf(board.id),
         backlog: countOf(backlogCounts, board.id),
-        forYou: countOf(mineCounts, board.id),
+        forYou: countOf(mineCounts, board.id) + recurringOf(board.id, true),
       },
     }));
   }
