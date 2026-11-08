@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-const MAX_LIFE_AREAS = 10;
+export const MAX_LIFE_AREAS = 10;
 
 @Injectable()
 export class LifeAreasService {

@@ -20,7 +20,7 @@ export class BoardsController {
   @Post()
   async create(@CurrentUser() userId: string, @AccessToken() token: string, @Body() dto: CreateBoardDto) {
     await this.boards.resolveBoardId(userId, token);
-    return this.boards.create(userId, dto.name, dto.shared, dto.invites);
+    return this.boards.create(userId, dto.name, dto.shared, dto.invites, dto.lifeAreas);
   }
 
   @Get('invites')

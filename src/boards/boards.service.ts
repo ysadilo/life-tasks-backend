@@ -4,10 +4,24 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ImagesService } from '../images/images.service';
+import { MAX_LIFE_AREAS } from '../life-areas/life-areas.service';
 import { hasOccurrenceOn, isOccurrenceDone } from '../tasks/recurrence.util';
 
 /** Seeded for every new board; order also picks the display colour (order % 10). */
 const DEFAULT_LIFE_AREAS = ['Home', 'Personal', 'Work', 'Health', 'Social'];
+
+/** Trims, drops blanks/non-strings and case-insensitive duplicates, caps at MAX_LIFE_AREAS; empty → defaults. */
+export function normalizeLifeAreas(raw: unknown): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const value of Array.isArray(raw) ? raw : []) {
+    const name = typeof value === 'string' ? value.trim() : '';
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    names.push(name);
+  }
+  return names.length ? names.slice(0, MAX_LIFE_AREAS) : DEFAULT_LIFE_AREAS;
+}
 
 @Injectable()
 export class BoardsService {
@@ -97,7 +111,7 @@ export class BoardsService {
   }
 
   /** Every board created through here is owned by (and its first member is) the creator. */
-  async create(ownerId: string, name: string, shared = false, inviteEmails: string[] = []) {
+  async create(ownerId: string, name: string, shared = false, inviteEmails: string[] = [], lifeAreas?: string[]) {
     const trimmed = name.trim();
     if (!trimmed) throw new BadRequestException('Name is required.');
 
@@ -107,7 +121,7 @@ export class BoardsService {
         name: trimmed,
         shared,
         members: { create: { userId: ownerId, role: BoardRole.owner } },
-        lifeAreas: { create: DEFAULT_LIFE_AREAS.map((areaName, order) => ({ name: areaName, order })) },
+        lifeAreas: { create: normalizeLifeAreas(lifeAreas).map((areaName, order) => ({ name: areaName, order })) },
       },
     });
     if (shared) for (const email of inviteEmails) await this.invite(board.id, ownerId, email);

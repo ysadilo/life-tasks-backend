@@ -1,4 +1,4 @@
-import { BoardsService } from './boards.service';
+import { BoardsService, normalizeLifeAreas } from './boards.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ImagesService } from '../images/images.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -238,5 +238,18 @@ describe('BoardsService join link', () => {
       expect.objectContaining({ create: { boardId: 'b1', userId: 'u1', role: 'member' } })
     );
     expect(deleteMany).toHaveBeenCalled();
+  });
+});
+
+describe('normalizeLifeAreas', () => {
+  it('trims, dedupes case-insensitively, drops blanks and caps at 10', () => {
+    const many = Array.from({ length: 12 }, (_, i) => `A${i}`);
+    expect(normalizeLifeAreas([' Дім ', 'дім', '', 42, 'Робота'])).toEqual(['Дім', 'Робота']);
+    expect(normalizeLifeAreas(many)).toHaveLength(10);
+  });
+
+  it('falls back to the defaults when nothing usable is given', () => {
+    expect(normalizeLifeAreas(undefined)).toEqual(['Home', 'Personal', 'Work', 'Health', 'Social']);
+    expect(normalizeLifeAreas(['  '])).toEqual(['Home', 'Personal', 'Work', 'Health', 'Social']);
   });
 });
