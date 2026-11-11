@@ -53,13 +53,13 @@ export class TaskRemindersService implements OnModuleInit, OnModuleDestroy {
           data: { lastNotifiedFor: day },
         });
         if (!claimed.count) continue;
-        await this.notifications.notifyTaskReminder(task.boardId, task.assigneeId, {
+        await this.notifications.notifyBoard(task.boardId, null, task.assigneeId, () => ({
           title: task.title,
           body: reminderBody(task.notifyDaysBefore!),
           // Unique per send: a reused tag makes the browser swap it in silently instead of alerting.
           tag: `reminder:${task.id}:${now.getTime()}`,
           url: `/today?task=${task.id}`,
-        });
+        }));
       }
     } catch (error) {
       this.logger.error('Reminder tick failed', error instanceof Error ? error.stack : String(error));
