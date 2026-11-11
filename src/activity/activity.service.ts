@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ActivityType, Task, TaskStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService, PushPayload } from '../notifications/notifications.service';
+import { Language, NotificationsService, PushPayload } from '../notifications/notifications.service';
 import type { UpdateTaskDto } from '../tasks/task.dto';
 
 export interface ActivityEvent {
@@ -25,14 +25,28 @@ const FEED_LIMIT = 20;
 
 const localPart = (email: string | undefined) => (email ?? '').split('@')[0];
 
-/** One-line wording for a push, from `recipientId`'s point of view ("to you" vs "to Max"). */
+/** One-line wording for a push, from `recipientId`'s point of view ("to you" vs "to Max"). Matches the in-app feed. */
 export function pushBody(
   event: ActivityEvent,
   actor: string,
   task: string,
   target: string,
-  recipientId: string
+  recipientId: string,
+  language: Language
 ): string {
+  if (language === 'uk') {
+    switch (event.type) {
+      case ActivityType.added:
+        return `${actor}: додано ${task}`;
+      case ActivityType.finished:
+        return `${actor}: виконано ${task}`;
+      case ActivityType.assigned:
+        if (!event.targetUserId) return `${actor}: з ${task} знято виконавця`;
+        return event.targetUserId === recipientId
+          ? `${actor}: ${task} тепер у вас`
+          : `${actor}: ${task} призначено для ${target}`;
+    }
+  }
   switch (event.type) {
     case ActivityType.added:
       return `${actor} added ${task}`;
@@ -117,9 +131,9 @@ export class ActivityService {
     const users = await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, email: true } });
     const name = (id: string | null | undefined) => localPart(users.find((u) => u.id === id)?.email);
     for (const event of events) {
-      await this.notifications.notifyBoard(boardId, actorId, task.assigneeId, (recipientId): PushPayload => ({
+      await this.notifications.notifyBoard(boardId, actorId, task.assigneeId, (recipientId, language): PushPayload => ({
         title: boardName,
-        body: pushBody(event, name(actorId), task.title, name(event.targetUserId), recipientId),
+        body: pushBody(event, name(actorId), task.title, name(event.targetUserId), recipientId, language),
         tag: `${boardId}:${event.type}:${task.title}`,
         url: `/today?task=${task.id}`,
       }));

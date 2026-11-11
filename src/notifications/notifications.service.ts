@@ -11,6 +11,11 @@ export interface PushPayload {
   url: string;
 }
 
+/** The UI languages push text is written in; anything else falls back to English. */
+export const LANGUAGES = ['en', 'uk'] as const;
+export type Language = (typeof LANGUAGES)[number];
+export const toLanguage = (value: unknown): Language => LANGUAGES.find((l) => l === value) ?? 'en';
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -53,7 +58,7 @@ export class NotificationsService {
     if (!dto.endpoint || !dto.keys?.p256dh || !dto.keys?.auth) {
       throw new BadRequestException('A push subscription needs an endpoint and keys.');
     }
-    const data = { userId, p256dh: dto.keys.p256dh, auth: dto.keys.auth };
+    const data = { userId, p256dh: dto.keys.p256dh, auth: dto.keys.auth, language: toLanguage(dto.language) };
     // The same browser can switch accounts, so the endpoint moves to whoever subscribed last.
     await this.prisma.pushSubscription.upsert({
       where: { endpoint: dto.endpoint },
@@ -77,13 +82,13 @@ export class NotificationsService {
 
   /**
    * A task's assignee, or everyone on the board when it's unassigned — never the actor, nor anyone who muted the board.
-   * `build` lets each recipient get their own wording.
+   * `build` lets each recipient get their own wording, in each device's language.
    */
   async notifyBoard(
     boardId: string,
     actorId: string | null,
     assigneeId: string | null,
-    build: (recipientId: string) => PushPayload
+    build: (recipientId: string, language: Language) => PushPayload
   ) {
     if (!this.enabled || (assigneeId && assigneeId === actorId)) return;
     const userId = assigneeId ?? (actorId ? { not: actorId } : undefined);
@@ -91,7 +96,7 @@ export class NotificationsService {
       where: { boardId, userId, user: { boardMutes: { none: { boardId } } } },
       select: { userId: true },
     });
-    await Promise.all(members.map((m) => this.send(m.userId, build(m.userId))));
+    await Promise.all(members.map((m) => this.send(m.userId, (language) => build(m.userId, language))));
   }
 
   /** Tells the invitee, if they already have an account; someone who hasn't signed in yet sees the invite on arrival. */
@@ -103,26 +108,29 @@ export class NotificationsService {
         this.prisma.user.findUnique({ where: { id: inviterId }, select: { email: true } }),
       ]);
       if (!invitee) return;
-      await this.send(invitee.id, {
-        title: 'Added to a board',
-        body: `${(inviter?.email ?? 'Someone').split('@')[0]} added you to ${boardName}`,
+      const name = inviter?.email.split('@')[0];
+      await this.send(invitee.id, (language) => ({
+        ...(language === 'uk'
+          ? { title: 'Вас додано до дошки', body: `${name ?? 'Хтось'}: вас додано до дошки ${boardName}` }
+          : { title: 'Added to a board', body: `${name ?? 'Someone'} added you to ${boardName}` }),
         tag: `invite:${boardName}`,
         url: '/settings',
-      });
+      }));
     } catch (error) {
       this.logger.error('Could not push an invite', error instanceof Error ? error.stack : String(error));
     }
   }
 
   /** Best effort: a push failure must never fail the request that caused it. Skips users whose master switch is off. */
-  private async send(userId: string, payload: PushPayload) {
+  private async send(userId: string, build: (language: Language) => PushPayload) {
     try {
       const subscriptions = await this.prisma.pushSubscription.findMany({
         where: { userId, user: { preferences: { notificationsEnabled: true } } },
       });
       await Promise.all(
-        subscriptions.map(async ({ id, endpoint, p256dh, auth }) => {
+        subscriptions.map(async ({ id, endpoint, p256dh, auth, language }) => {
           try {
+            const payload = build(toLanguage(language));
             await webPush.sendNotification({ endpoint, keys: { p256dh, auth } }, JSON.stringify(payload));
           } catch (error) {
             const status = (error as { statusCode?: number }).statusCode;
