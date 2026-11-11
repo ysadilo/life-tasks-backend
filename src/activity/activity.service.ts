@@ -117,7 +117,7 @@ export class ActivityService {
     const users = await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, email: true } });
     const name = (id: string | null | undefined) => localPart(users.find((u) => u.id === id)?.email);
     for (const event of events) {
-      await this.notifications.notifyBoard(boardId, actorId, (recipientId): PushPayload => ({
+      await this.notifications.notifyBoard(boardId, actorId, task.assigneeId, (recipientId): PushPayload => ({
         title: boardName,
         body: pushBody(event, name(actorId), task.title, name(event.targetUserId), recipientId),
         tag: `${boardId}:${event.type}:${task.title}`,

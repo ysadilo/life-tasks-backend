@@ -75,24 +75,23 @@ export class NotificationsService {
     else await this.prisma.boardMute.deleteMany({ where: { boardId, userId } });
   }
 
-  /** Everyone on the board except the actor and anyone who muted it; `build` lets each recipient get their own wording. */
-  async notifyBoard(boardId: string, actorId: string, build: (recipientId: string) => PushPayload) {
-    if (!this.enabled) return;
+  /**
+   * A task's assignee, or everyone on the board when it's unassigned — never the actor, nor anyone who muted the board.
+   * `build` lets each recipient get their own wording.
+   */
+  async notifyBoard(
+    boardId: string,
+    actorId: string | null,
+    assigneeId: string | null,
+    build: (recipientId: string) => PushPayload
+  ) {
+    if (!this.enabled || (assigneeId && assigneeId === actorId)) return;
+    const userId = assigneeId ?? (actorId ? { not: actorId } : undefined);
     const members = await this.prisma.boardMember.findMany({
-      where: { boardId, userId: { not: actorId }, user: { boardMutes: { none: { boardId } } } },
+      where: { boardId, userId, user: { boardMutes: { none: { boardId } } } },
       select: { userId: true },
     });
     await Promise.all(members.map((m) => this.send(m.userId, build(m.userId))));
-  }
-
-  /** A task reminder goes to its assignee, or to everyone on the board when unassigned; muting the board silences it. */
-  async notifyTaskReminder(boardId: string, assigneeId: string | null, payload: PushPayload) {
-    if (!this.enabled) return;
-    const members = await this.prisma.boardMember.findMany({
-      where: { boardId, ...(assigneeId ? { userId: assigneeId } : {}), user: { boardMutes: { none: { boardId } } } },
-      select: { userId: true },
-    });
-    await Promise.all(members.map((m) => this.send(m.userId, payload)));
   }
 
   /** Tells the invitee, if they already have an account; someone who hasn't signed in yet sees the invite on arrival. */
