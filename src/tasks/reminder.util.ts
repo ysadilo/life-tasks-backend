@@ -1,5 +1,6 @@
 import { Task, TaskStatus } from '@prisma/client';
 import { isOccurrenceDone, occursOn } from './recurrence.util';
+import type { Language } from '../notifications/notifications.service';
 
 const DAY = 86_400_000;
 export const MAX_NOTIFY_DAYS_BEFORE = 30;
@@ -80,7 +81,14 @@ export function reminderDay(
   return day;
 }
 
-export function reminderBody(daysBefore: number): string {
+const UK_DAYS = { one: 'день', few: 'дні', many: 'днів', other: 'дня' } as Record<string, string>;
+
+export function reminderBody(daysBefore: number, language: Language): string {
+  if (language === 'uk') {
+    if (daysBefore === 0) return 'Термін сьогодні';
+    if (daysBefore === 1) return 'Термін завтра';
+    return `Термін через ${daysBefore} ${UK_DAYS[new Intl.PluralRules('uk').select(daysBefore)]}`;
+  }
   if (daysBefore === 0) return 'Due today';
   if (daysBefore === 1) return 'Due tomorrow';
   return `Due in ${daysBefore} days`;

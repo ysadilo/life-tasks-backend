@@ -1,5 +1,5 @@
 import { Recurrence, Task, TaskStatus } from '@prisma/client';
-import { notifyError, reminderDay } from './reminder.util';
+import { notifyError, reminderBody, reminderDay } from './reminder.util';
 
 const task = (over: Partial<Task>) =>
   ({
@@ -57,5 +57,14 @@ describe('notifyError', () => {
     expect(notifyError({ notifyDaysBefore: 1, notifyTime: '9:00' })).toMatch(/HH:MM/);
     expect(notifyError({ notifyDaysBefore: 1, notifyTime: '09:00', notifyTimeZone: 'Mars/Base' })).toMatch(/time zone/);
     expect(notifyError({ notifyDaysBefore: 1, notifyTime: '09:00', notifyTimeZone: 'Europe/Kyiv' })).toBeNull();
+  });
+});
+
+describe('reminderBody', () => {
+  it('speaks the device language, with Ukrainian plurals', () => {
+    expect(reminderBody(3, 'en')).toBe('Due in 3 days');
+    expect(reminderBody(1, 'uk')).toBe('Термін завтра');
+    expect(reminderBody(3, 'uk')).toBe('Термін через 3 дні');
+    expect(reminderBody(5, 'uk')).toBe('Термін через 5 днів');
   });
 });

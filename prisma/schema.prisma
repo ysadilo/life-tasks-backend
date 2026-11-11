@@ -193,6 +193,8 @@ model PushSubscription {
   endpoint  String   @unique
   p256dh    String
   auth      String
+  // The UI language this device had when it subscribed; push text is written in it.
+  language  String   @default("en")
   createdAt DateTime @default(now())
 
   @@index([userId])
