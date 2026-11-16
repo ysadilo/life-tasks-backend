@@ -135,7 +135,7 @@ export class ActivityService {
         title: boardName,
         body: pushBody(event, name(actorId), task.title, name(event.targetUserId), recipientId, language),
         tag: `${boardId}:${event.type}:${task.title}`,
-        url: `/today?task=${task.id}`,
+        url: `/today?task=${task.id}&board=${boardId}`,
       }));
     }
   }
