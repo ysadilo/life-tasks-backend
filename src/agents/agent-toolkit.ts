@@ -72,7 +72,7 @@ export class AgentToolkit {
   private need(permission: AgentPermission) {
     if (!this.can.has(permission)) {
       throw new Error(
-        `The "${permission}" permission is off for ${this.connection.name}. Ask the user to turn it on in Life Tasks › Settings › AI agents.`
+        `The "${permission}" permission is off for ${this.connection.name}. Ask the user to turn it on in LifeTasks › Settings › AI agents.`
       );
     }
   }
