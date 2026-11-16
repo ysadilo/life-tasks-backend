@@ -1,6 +1,6 @@
 # life-tasks-backend
 
-NestJS API + Prisma + Postgres for Life Tasks Manager. Owns all business rules,
+NestJS API + Prisma + Postgres for LifeTasks. Owns all business rules,
 authorization, recurrence generation — the client
 (`life-tasks-frontend`) never touches Postgres directly.
 

@@ -104,9 +104,9 @@ export class AgentsService {
    */
   async connect(userId: string, clientId: string, clientName?: string): Promise<AgentConnection> {
     const existing = await this.prisma.agentConnection.findUnique({ where: { userId_clientId: { userId, clientId } } });
-    if (existing?.revokedAt) throw new ForbiddenException('Access was revoked in Life Tasks › Settings › AI agents.');
+    if (existing?.revokedAt) throw new ForbiddenException('Access was revoked in LifeTasks › Settings › AI agents.');
     if (!(await this.isEnabled(userId))) {
-      throw new ForbiddenException('AI agents are turned off in Life Tasks › Settings › AI agents.');
+      throw new ForbiddenException('AI agents are turned off in LifeTasks › Settings › AI agents.');
     }
     if (this.overRateLimit(existing?.id ?? `${userId}:${clientId}`)) {
       throw new HttpException('Too many requests', HttpStatus.TOO_MANY_REQUESTS);
@@ -120,7 +120,7 @@ export class AgentsService {
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new ForbiddenException('Open Life Tasks and sign in once before connecting an agent.');
+    if (!user) throw new ForbiddenException('Open LifeTasks and sign in once before connecting an agent.');
     const personal = await this.prisma.board.findMany({
       where: { ownerId: userId, shared: false },
       select: { id: true },
@@ -218,7 +218,7 @@ export class AgentsService {
    */
   async authorize(userId: string, clientId: string, name: string, dto: UpdateAgentDto) {
     if (!(await this.prisma.user.findUnique({ where: { id: userId } }))) {
-      throw new ForbiddenException('Open Life Tasks and sign in once before connecting an agent.');
+      throw new ForbiddenException('Open LifeTasks and sign in once before connecting an agent.');
     }
     const { permissions, boardIds } = await this.validatedChanges(userId, dto);
     const displayName = agentDisplayName(name);

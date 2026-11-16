@@ -9,7 +9,7 @@ third-party apps, a post-login Action, or domain-level connections for this.
 
 ## One-time setup
 
-1. Auth0 › **Applications › Create Application** → **Regular Web Applications**, e.g. "Life Tasks agent sign-in".
+1. Auth0 › **Applications › Create Application** → **Regular Web Applications**, e.g. "LifeTasks agent sign-in".
 2. **Settings**
    - _Allowed Callback URLs_: `https://<your host>/api/oauth/callback`
      (the origin of `MCP_PUBLIC_URL`, e.g. `https://lifetasks.today/api/oauth/callback`)
