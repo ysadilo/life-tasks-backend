@@ -58,7 +58,7 @@ export class TaskRemindersService implements OnModuleInit, OnModuleDestroy {
           body: reminderBody(task.notifyDaysBefore!, language),
           // Unique per send: a reused tag makes the browser swap it in silently instead of alerting.
           tag: `reminder:${task.id}:${now.getTime()}`,
-          url: `/today?task=${task.id}`,
+          url: `/today?task=${task.id}&board=${task.boardId}`,
         }));
       }
     } catch (error) {
