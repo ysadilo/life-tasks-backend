@@ -26,6 +26,10 @@ describe('PreferencesService', () => {
     );
   });
 
+  it.each([TaskSort.energy, TaskSort.area])('accepts the %s Today sort', async (todaySortBy) => {
+    expect(await service.update('u1', { todaySortBy })).toEqual(expect.objectContaining({ todaySortBy }));
+  });
+
   it('rejects unknown values', async () => {
     await expect(service.update('u1', { todaySortBy: 'bogus' as TaskSort })).rejects.toBeInstanceOf(
       BadRequestException

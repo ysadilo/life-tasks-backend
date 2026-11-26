@@ -71,6 +71,8 @@ enum TaskSort {
   dueDate
   effort
   manual
+  energy
+  area
 }
 
 enum TaskGroupBy {
